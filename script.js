@@ -1,9 +1,12 @@
 const GST_RATE = 0.09;
 const WHATSAPP_NUMBER = "+6583963088";
 const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyGFLMQqS42t-ZGHyhnYBgYv3kILp9IhY903xXVbSEH3vv_SIaEmX9o-aohJ_nynu-ncA/exec";
+const HDB_LOAN_LTV = 0.75;
+const BANK_LOAN_LTV = 0.75;
 
 const state = {
   mode: "seller",
+  leadSubmitted: false,
 };
 
 const money = new Intl.NumberFormat("en-SG", {
@@ -138,14 +141,18 @@ function getSellerData() {
 }
 
 function getBuyerData() {
+  const isHdbPurchase = state.mode === "hdb";
   const purchasePrice = num("purchasePrice");
-  const valuation = num("valuation");
+  const valuation = isHdbPurchase ? num("valuation") : purchasePrice;
   const loanValue = Math.min(purchasePrice, valuation || purchasePrice);
-  const keyedLoan = $("loanType").value === "No loan" ? 0 : num("approvedLoan");
-  const maxLoan = $("loanType").value === "No loan" ? 0 : loanValue * 0.75;
+  const loanType = $("loanType").value;
+  const keyedLoan = loanType === "No loan" ? 0 : num("approvedLoan");
+  const loanRate = loanType === "HDB loan" ? HDB_LOAN_LTV : BANK_LOAN_LTV;
+  const maxLoan = loanType === "No loan" ? 0 : loanValue * loanRate;
   const loan = Math.min(keyedLoan, maxLoan);
-  const loanShortfall = $("loanType").value === "No loan" ? 0 : Math.max(maxLoan - loan, 0);
+  const loanShortfall = loanType === "No loan" ? 0 : Math.max(maxLoan - loan, 0);
   const cpf = num("cpfAvailable");
+  const grant = isHdbPurchase ? num("buyerGrant") : 0;
   const stampDutyBase = Math.max(purchasePrice, valuation);
   const bsd = buyerStampDuty(stampDutyBase);
   const absdRate = Number($("absdProfile").value);
@@ -153,7 +160,15 @@ function getBuyerData() {
   const legal = num("buyerLegal");
   const misc = num("buyerMisc");
   const valuationGap = Math.max(purchasePrice - loanValue, 0);
-  const minimumCashDownpayment = $("loanType").value === "No loan" ? purchasePrice : loanValue * 0.05;
+  const downpaymentRows =
+    loanType === "No loan"
+      ? [{ label: "No loan purchase amount", value: purchasePrice, className: "warning" }]
+      : loanType === "HDB loan"
+        ? [{ label: "25% CPF and/or cash downpayment guide", value: loanValue * 0.25, className: "warning" }]
+        : [
+            { label: "5% cash downpayment guide", value: loanValue * 0.05, className: "warning" },
+            { label: "20% CPF and/or cash downpayment guide", value: loanValue * 0.2, className: "warning" },
+          ];
   const commission = commissionWithGst(
     purchasePrice,
     num("buyerCommissionRate"),
@@ -167,33 +182,38 @@ function getBuyerData() {
     legal +
     misc +
     commission -
-    loan;
+    loan -
+    grant;
 
   const cashNeededAfterCpf = Math.max(totalCashAndCpfNeeded - cpf, 0);
+  const purchaseLabel = isHdbPurchase ? "Next HDB purchase price" : "Private condo purchase price";
+  const valuationLabel = isHdbPurchase ? "Valuation" : "Bank Valuation";
+  const ltvLabel = loanType === "HDB loan" ? "Max HDB loan at 75% LTV" : "Max bank loan at 75% LTV";
+  const buyerRows = [
+    { label: purchaseLabel, value: purchasePrice, className: "highlight" },
+    ...(isHdbPurchase ? [{ label: valuationLabel, value: valuation }] : []),
+    { label: "Stamp duty basis", value: stampDutyBase },
+    { label: "Buyer Stamp Duty", value: bsd },
+    { label: `ABSD at ${absdRate}%`, value: absd, className: absd > 0 ? "warning" : "" },
+    { label: "Legal fee", value: legal },
+    { label: "Miscellaneous fee", value: misc },
+    { label: "Agent commission + GST", value: commission },
+    { label: ltvLabel, value: maxLoan },
+    { label: "Approved loan", value: -loan },
+    ...(loanShortfall > 0
+      ? [{ label: "Loan shortfall to be funded", value: loanShortfall, className: "warning" }]
+      : []),
+    ...(grant > 0 ? [{ label: "CPF housing grants", value: -grant }] : []),
+    ...(isHdbPurchase ? [{ label: "Cash Over Valuation (COV)", value: valuationGap, className: valuationGap > 0 ? "warning" : "" }] : []),
+    ...downpaymentRows,
+    { label: "Total OA available", value: -cpf },
+    { label: "Estimated cash needed after CPF", value: cashNeededAfterCpf, className: "highlight" },
+  ];
 
   return {
     required: totalCashAndCpfNeeded,
     cashNeededAfterCpf,
-    rows: [
-      { label: "Purchase price", value: purchasePrice, className: "highlight" },
-      { label: "Bank / market valuation", value: valuation },
-      { label: "Stamp duty basis", value: stampDutyBase },
-      { label: "Buyer Stamp Duty", value: bsd },
-      { label: `ABSD at ${absdRate}%`, value: absd, className: absd > 0 ? "warning" : "" },
-      { label: "Legal fee", value: legal },
-      { label: "Miscellaneous fee", value: misc },
-      { label: "Agent commission + GST", value: commission },
-      { label: "Max bank loan at 75% LTV", value: maxLoan },
-      { label: "Approved loan", value: -loan },
-      ...(loanShortfall > 0
-        ? [{ label: "Loan shortfall to be funded", value: loanShortfall, className: "warning" }]
-        : []),
-      { label: "Estimated cash and/or CPF needed", value: totalCashAndCpfNeeded, className: "highlight" },
-      { label: "Minimum 5% cash downpayment guide", value: minimumCashDownpayment, className: "warning" },
-      { label: "Price above bank valuation", value: valuationGap, className: valuationGap > 0 ? "warning" : "" },
-      { label: "Total OA available", value: -cpf },
-      { label: "Estimated cash needed after CPF", value: cashNeededAfterCpf, className: "highlight" },
-    ],
+    rows: buyerRows,
   };
 }
 
@@ -219,11 +239,12 @@ function renderBoth() {
   const seller = getSellerData();
   const buyer = getBuyerData();
   const net = seller.proceeds - buyer.required;
+  const target = state.mode === "hdb" ? "next HDB purchase" : "condo purchase";
 
   $("resultKicker").textContent = "Estimated net position";
   $("resultTotal").textContent = money.format(net);
   $("quickTotal").textContent = money.format(net);
-  $("quickLabel").textContent = "Estimated balance after using HDB sale proceeds for condo purchase";
+  $("quickLabel").textContent = `Estimated balance after using HDB sale proceeds for ${target}`;
 
   setGroupedBreakdown([
     {
@@ -242,17 +263,15 @@ function renderBoth() {
     },
     {
       title: "Buying",
-      rows: [
-        ...buyer.rows,
-        { label: "Estimated cash and/or CPF needed", value: buyer.required, className: "highlight" },
-      ],
+      rows: buyer.rows,
     },
   ]);
 }
 
 function getModeLabel() {
-  if (state.mode === "seller") return "I am selling";
-  return "I am buying and selling";
+  if (state.mode === "seller") return "I am Selling HDB";
+  if (state.mode === "hdb") return "I am Selling HDB and Buying HDB";
+  return "I am Selling HDB and Upgrading to Condo";
 }
 
 function getCurrentEstimate() {
@@ -286,7 +305,7 @@ function getCurrentEstimate() {
 function estimateSummary() {
   const estimate = getCurrentEstimate();
 
-  if (state.mode === "both") {
+  if (state.mode === "hdb" || state.mode === "condo") {
     const seller = getSellerData();
     const buyer = getBuyerData();
     const net = seller.proceeds - buyer.required;
@@ -336,12 +355,13 @@ function fullInputDetails() {
   ];
 
   const buyerInputs = [
-    inputValue("Private condo purchase price", "purchasePrice"),
-    inputValue("Bank / market valuation", "valuation"),
+    inputValue(state.mode === "hdb" ? "Next HDB purchase price" : "Private condo purchase price", "purchasePrice"),
+    ...(state.mode === "hdb" ? [inputValue("Valuation", "valuation")] : []),
     { label: "Loan type", value: $("loanType").value },
     inputValue("Approved loan amount", "approvedLoan"),
     inputValue("Total OA available", "cpfAvailable"),
-    { label: "ABSD profile", value: $("absdProfile").selectedOptions[0].textContent },
+    ...(state.mode === "hdb" ? [inputValue("CPF housing grants, if any", "buyerGrant")] : []),
+    { label: state.mode === "hdb" ? "SPR ABSD option" : "ABSD profile", value: $("absdProfile").selectedOptions[0].textContent },
     inputValue("Buyer legal fee", "buyerLegal"),
     inputValue("Buyer miscellaneous fee", "buyerMisc"),
     { label: "Buyer agent commission + GST", value: $("buyerCommissionOn").checked ? `${$("buyerCommissionRate").value}%` : "Not included" },
@@ -418,10 +438,75 @@ function updateCommissionVisibility() {
   $("buyerCommissionFields").classList.toggle("muted", !$("buyerCommissionOn").checked);
 }
 
+function syncApprovedLoanWithLoanType() {
+  const loanType = $("loanType").value;
+  const approvedLoanInput = $("approvedLoan");
+  const isHdbPurchase = state.mode === "hdb";
+
+  if (loanType === "No loan") {
+    approvedLoanInput.value = money.format(0);
+    approvedLoanInput.disabled = true;
+    return;
+  }
+
+  approvedLoanInput.disabled = false;
+  if (cleanNumber(approvedLoanInput.value) === 0) {
+    const purchasePrice = num("purchasePrice");
+    const valuation = isHdbPurchase ? num("valuation") : purchasePrice;
+    const loanValue = Math.min(purchasePrice, valuation || purchasePrice);
+    const loanRate = loanType === "HDB loan" ? HDB_LOAN_LTV : BANK_LOAN_LTV;
+    approvedLoanInput.value = money.format(loanValue * loanRate);
+  }
+}
+
+function updateBuyerModeCopy() {
+  const isHdbPurchase = state.mode === "hdb";
+  const hdbLoanOption = Array.from($("loanType").options).find((option) => option.textContent === "HDB loan");
+  const absdOptions = Array.from($("absdProfile").options);
+
+  $("buyerPanelTitle").textContent = isHdbPurchase ? "HDB buyer calculator" : "Condo buyer calculator";
+  $("buyerPanelDescription").textContent = isHdbPurchase
+    ? "Estimate cash needed after HDB or bank loan, CPF OA, grants, stamp duties, fees, and commission."
+    : "Estimate cash needed after bank loan, CPF OA, stamp duties, fees, and commission.";
+  $("purchasePriceLabel").textContent = isHdbPurchase ? "Next HDB purchase price" : "Private condo purchase price";
+  $("valuationLabel").textContent = isHdbPurchase ? "Valuation" : "Bank Valuation";
+  $("absdLabel").textContent = isHdbPurchase ? "SPR ABSD option" : "ABSD profile";
+  $("grantLabel").textContent = isHdbPurchase ? "CPF housing grants, if any" : "CPF housing grants";
+  $("valuation").closest(".field").hidden = !isHdbPurchase;
+  $("buyerGrant").closest(".field").hidden = !isHdbPurchase;
+  $("buyerLegalGuide").textContent = isHdbPurchase ? "Usually around $2,000 to $3,000." : "Usually between $2,500 to $4,000.";
+  $("buyerMiscGuide").textContent = isHdbPurchase
+    ? "Usually around $500 to $1,500 for resale application, HDB admin, HDB search, HDB survey, HDB caveat, pro-rated town council, and property tax."
+    : "Usually between $1,000 to $2,500.";
+
+  if (hdbLoanOption) {
+    hdbLoanOption.hidden = !isHdbPurchase;
+    hdbLoanOption.disabled = !isHdbPurchase;
+  }
+
+  if (!isHdbPurchase && $("loanType").value === "HDB loan") {
+    $("loanType").value = "Bank loan";
+  }
+
+  absdOptions.forEach((option) => {
+    const isVisible = option.dataset.scope === (isHdbPurchase ? "hdb" : "condo");
+    option.hidden = !isVisible;
+    option.disabled = !isVisible;
+  });
+  const selectedScope = $("absdProfile").selectedOptions[0]?.dataset.scope;
+  if (selectedScope !== (isHdbPurchase ? "hdb" : "condo")) {
+    const nextOption = absdOptions.find((option) => !option.disabled);
+    if (nextOption) nextOption.selected = true;
+  }
+
+  syncApprovedLoanWithLoanType();
+}
+
 function updatePanels() {
-  $("sellerPanel").classList.toggle("active", state.mode === "seller" || state.mode === "both");
-  $("buyerPanel").classList.toggle("active", state.mode === "both");
-  $("calculator").classList.toggle("combined", state.mode === "both");
+  updateBuyerModeCopy();
+  $("sellerPanel").classList.toggle("active", state.mode === "seller" || state.mode === "hdb" || state.mode === "condo");
+  $("buyerPanel").classList.toggle("active", state.mode === "hdb" || state.mode === "condo");
+  $("calculator").classList.toggle("combined", state.mode === "hdb" || state.mode === "condo");
 }
 
 function calculate() {
@@ -432,7 +517,11 @@ function calculate() {
 
 document.querySelectorAll(".mode-btn").forEach((button) => {
   button.addEventListener("click", () => {
+    const previousMode = state.mode;
     state.mode = button.dataset.mode;
+    if (state.mode === "hdb" && previousMode !== "hdb") {
+      $("loanType").value = "HDB loan";
+    }
     document.querySelectorAll(".mode-btn").forEach((item) => item.classList.remove("active"));
     button.classList.add("active");
     updatePanels();
@@ -443,6 +532,11 @@ document.querySelectorAll(".mode-btn").forEach((button) => {
 document.querySelectorAll("input, select").forEach((input) => {
   input.addEventListener("input", calculate);
   input.addEventListener("change", calculate);
+});
+
+$("loanType").addEventListener("change", () => {
+  syncApprovedLoanWithLoanType();
+  calculate();
 });
 
 document.querySelectorAll(".money-input").forEach((input) => {
@@ -472,6 +566,8 @@ $("leadModal").addEventListener("click", (event) => {
 
 $("leadForm").addEventListener("submit", async (event) => {
   event.preventDefault();
+  if (state.leadSubmitted) return;
+
   const name = $("leadName").value.trim();
   const phone = $("leadPhone").value.trim();
 
@@ -488,6 +584,8 @@ $("leadForm").addEventListener("submit", async (event) => {
   }
 
   const payload = leadPayload();
+  state.leadSubmitted = true;
+  $("leadSubmitButton").disabled = true;
   $("leadStatus").textContent = "Preparing your estimate and opening WhatsApp...";
 
   try {

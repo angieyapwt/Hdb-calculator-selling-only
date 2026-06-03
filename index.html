@@ -4,17 +4,13 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>HDB Sale & Condo Upgrade Calculator</title>
-    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="styles.css?v=20260603-2">
   </head>
   <body>
     <main class="app">
       <section class="hero">
         <div>
-          <p class="eyebrow">Singapore upgrader planning tool</p>
-          <h1>Estimate your HDB sale proceeds or your HDB-to-condo upgrade position.</h1>
-          <p class="intro">
-            A simple calculator for early-stage planning. Figures are estimates and should be verified with HDB, CPF Board, IRAS, your bank, and your conveyancing party before you commit.
-          </p>
+          <h1>Plan Your Next Home Move</h1>
         </div>
         <div class="hero-panel">
           <span class="panel-label">Quick view</span>
@@ -25,15 +21,19 @@
 
       <section class="workspace" aria-label="HDB sale and private condo purchase calculator">
         <div class="toggle-wrap">
-          <button class="mode-btn active" type="button" data-mode="seller">I am selling</button>
-          <button class="mode-btn" type="button" data-mode="both">I am buying and selling</button>
+          <button class="mode-btn active" type="button" data-mode="seller">I am Selling HDB</button>
+          <button class="mode-btn" type="button" data-mode="hdb">I am Selling HDB and Buying HDB</button>
+          <button class="mode-btn" type="button" data-mode="condo">I am Selling HDB and Upgrading to Condo</button>
         </div>
 
         <form class="calculator" id="calculator">
           <section class="form-panel active" id="sellerPanel" aria-label="HDB seller calculator">
             <div class="panel-heading">
               <h2>HDB seller calculator</h2>
-              <p>Estimate the cash proceeds after loan, CPF refund, fees, and commission.</p>
+              <div>
+                <p>Estimate the cash proceeds after loan, CPF refund, fees, and commission.</p>
+                <small class="privacy-note">Figures entered here are not recorded unless you submit the form.</small>
+              </div>
             </div>
 
             <div class="grid">
@@ -68,8 +68,8 @@
               </label>
               <label class="field">
                 <span>Miscellaneous fee</span>
-                <input class="money-input" type="text" inputmode="decimal" id="sellerMisc" value="$800">
-                <small>Usually around $500 to $1,000 for resale application, HDB admin, HDB search, HDB survey, HDB caveat, pro-rated town council, and property tax.</small>
+                <input class="money-input" type="text" inputmode="decimal" id="sellerMisc" value="$1,000">
+                <small>Usually around $500 to $1,500 for resale application, HDB admin, HDB search, HDB survey, HDB caveat, pro-rated town council, and property tax.</small>
               </label>
             </div>
 
@@ -91,23 +91,24 @@
 
           <section class="form-panel" id="buyerPanel" aria-label="Buyer calculator">
             <div class="panel-heading">
-              <h2>Condo buyer calculator</h2>
-              <p>Estimate cash needed after bank loan, CPF OA, stamp duties, fees, and commission.</p>
+              <h2 id="buyerPanelTitle">Next home buyer calculator</h2>
+              <p id="buyerPanelDescription">Estimate cash needed after loan, CPF OA, stamp duties, fees, and commission.</p>
             </div>
 
             <div class="grid">
               <label class="field">
-                <span>Private condo purchase price</span>
+                <span id="purchasePriceLabel">Next home purchase price</span>
                 <input class="money-input" type="text" inputmode="decimal" id="purchasePrice" value="$1,500,000">
               </label>
               <label class="field">
-                <span>Bank / market valuation</span>
+                <span id="valuationLabel">Valuation</span>
                 <input class="money-input" type="text" inputmode="decimal" id="valuation" value="$1,500,000">
                 <small>Loan cap is based on the lower of purchase price and valuation.</small>
               </label>
               <label class="field">
                 <span>Loan type</span>
                 <select id="loanType">
+                  <option>HDB loan</option>
                   <option>Bank loan</option>
                   <option>No loan</option>
                 </select>
@@ -115,31 +116,35 @@
               <label class="field">
                 <span>Approved loan amount</span>
                 <input class="money-input" type="text" inputmode="decimal" id="approvedLoan" value="$1,125,000">
-                <small>Calculator caps this at 75% loan-to-value for private residential property.</small>
+                <small id="loanGuide">Calculator will cap this at 75% loan-to-value.</small>
               </label>
               <label class="field">
                 <span>Total OA available</span>
                 <input class="money-input" type="text" inputmode="decimal" id="cpfAvailable" value="$200,000">
               </label>
               <label class="field">
-                <span>ABSD profile</span>
+                <span id="grantLabel">CPF housing grants, if any</span>
+                <input class="money-input" type="text" inputmode="decimal" id="buyerGrant" value="$0">
+              </label>
+              <label class="field">
+                <span id="absdLabel">SPR ABSD option</span>
                 <select id="absdProfile">
-                  <option value="0">SC buying first residential property - 0%</option>
-                  <option value="20">SC buying second residential property - 20%</option>
-                  <option value="5">SPR buying first residential property - 5%</option>
-                  <option value="30">SPR buying second residential property - 30%</option>
+                  <option value="0" data-scope="hdb">Not applicable</option>
+                  <option value="5" data-scope="hdb">5%, if applicable</option>
+                  <option value="0" data-scope="condo">SC buying first residential property - 0%</option>
+                  <option value="20" data-scope="condo">SC buying second residential property - 20%</option>
                 </select>
                 <small>ABSD is calculated on the higher of price and market value.</small>
               </label>
               <label class="field">
                 <span>Legal fee</span>
-                <input class="money-input" type="text" inputmode="decimal" id="buyerLegal" value="$3,000">
-                <small>Usually between $2,500 to $4,000.</small>
+                <input class="money-input" type="text" inputmode="decimal" id="buyerLegal" value="$2,500">
+                <small id="buyerLegalGuide">Usually around $2,000 to $3,000.</small>
               </label>
               <label class="field">
                 <span>Miscellaneous fee</span>
-                <input class="money-input" type="text" inputmode="decimal" id="buyerMisc" value="$1,500">
-                <small>Usually between $1,000 to $2,500.</small>
+                <input class="money-input" type="text" inputmode="decimal" id="buyerMisc" value="$1,000">
+                <small id="buyerMiscGuide">Usually around $500 to $1,500 for resale application, HDB admin, HDB search, HDB survey, HDB caveat, pro-rated town council, and property tax.</small>
               </label>
             </div>
 
@@ -165,7 +170,7 @@
           <div class="result-total" id="resultTotal">$0</div>
           <div class="breakdown" id="breakdown"></div>
           <div class="compliance">
-            This calculator provides an estimate based on the figures entered. Final amounts may differ depending on HDB, CPF Board, IRAS, your bank, law firm, and prevailing rules at the point of transaction. Figures entered here are not recorded unless you submit the form.
+            This calculator provides an estimate based on the figures entered. Final amounts may differ depending on HDB, CPF Board, IRAS, your bank, law firm, and prevailing rules at the point of transaction.
           </div>
         </aside>
       </section>
@@ -173,7 +178,7 @@
       <section class="cta">
         <div>
           <h2>Want to sense-check your numbers before making the next move?</h2>
-          <p>Share your estimate and get a clearer view of what the numbers may mean for your HDB-to-condo upgrade.</p>
+          <p>Share your estimate and gain a clearer understanding of your potential budget and property options.</p>
         </div>
         <button class="cta-button" type="button" id="openLeadForm">Sense check my figures</button>
       </section>
@@ -227,10 +232,10 @@
             </label>
 
             <div class="form-actions">
-              <button class="cta-button" type="submit">Sense check and open WhatsApp</button>
+              <button class="cta-button" type="submit" id="leadSubmitButton">Sense check and open WhatsApp</button>
             </div>
             <p class="form-note" id="leadStatus">
-              Submission records the details above, sends a real-time email notification, and then opens WhatsApp with the estimate details.
+              Submission records the details and then opens WhatsApp with the estimate details.
             </p>
             <p class="advisor-contact">
               By Angie Yap · CEA Reg No.: R067805D · WhatsApp me at
