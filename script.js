@@ -414,7 +414,7 @@ async function submitLead(payload) {
 
 function openWhatsapp(payload) {
   const message = [
-    "Hi, I used your HDB sale and condo purchase calculator and would like to sense-check my figures.",
+    "Hi, I used your sale and purchase calculator and would like to sense-check my figures.",
     "",
     `Name: ${payload.name}`,
     `WhatsApp: ${payload.phone}`,
