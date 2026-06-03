@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>HDB Sale & Condo Upgrade Calculator</title>
-    <link rel="stylesheet" href="styles.css?v=20260603-2">
+    <link rel="stylesheet" href="styles.css?v=20260603-5">
   </head>
   <body>
     <main class="app">
@@ -67,7 +67,7 @@
                 <small>Usually around $2,000 to $3,000.</small>
               </label>
               <label class="field">
-                <span>Miscellaneous fee</span>
+                <span>Miscellaneous fee (cash only)</span>
                 <input class="money-input" type="text" inputmode="decimal" id="sellerMisc" value="$1,000">
                 <small>Usually around $500 to $1,500 for resale application, HDB admin, HDB search, HDB survey, HDB caveat, pro-rated town council, and property tax.</small>
               </label>
@@ -77,13 +77,13 @@
               <label class="switch">
                 <input type="checkbox" id="sellerCommissionOn" checked>
                 <span></span>
-                Include agent commission + GST
+                Include agent commission + GST (cash only)
               </label>
               <div class="commission-fields" id="sellerCommissionFields">
                 <label class="field compact">
                   <span>Commission rate</span>
                   <input type="number" min="0" step="0.1" inputmode="decimal" id="sellerCommissionRate" value="2">
-                  <small>% of selling price, with 9% GST added.</small>
+                  <small>% of selling price, with 9% GST added. This is treated as cash only.</small>
                 </label>
               </div>
             </div>
@@ -142,7 +142,7 @@
                 <small id="buyerLegalGuide">Usually around $2,000 to $3,000.</small>
               </label>
               <label class="field">
-                <span>Miscellaneous fee</span>
+                <span>Miscellaneous fee (cash only)</span>
                 <input class="money-input" type="text" inputmode="decimal" id="buyerMisc" value="$1,000">
                 <small id="buyerMiscGuide">Usually around $500 to $1,500 for resale application, HDB admin, HDB search, HDB survey, HDB caveat, pro-rated town council, and property tax.</small>
               </label>
@@ -152,13 +152,13 @@
               <label class="switch">
                 <input type="checkbox" id="buyerCommissionOn" checked>
                 <span></span>
-                Include agent commission + GST
+                Include agent commission + GST (cash only)
               </label>
               <div class="commission-fields muted" id="buyerCommissionFields">
                 <label class="field compact">
                   <span>Commission rate</span>
                   <input type="number" min="0" step="0.1" inputmode="decimal" id="buyerCommissionRate" value="1">
-                  <small>% of purchase price, with 9% GST added.</small>
+                  <small>% of purchase price, with 9% GST added. This is treated as cash only.</small>
                 </label>
               </div>
             </div>
@@ -168,6 +168,13 @@
         <aside class="result-card" aria-live="polite">
           <p class="result-kicker" id="resultKicker">Estimated seller cash proceeds</p>
           <div class="result-total" id="resultTotal">$0</div>
+          <section class="health-card" id="healthCard">
+            <div class="health-heading">
+              <span>Financial Health Snapshot</span>
+              <strong class="health-badge healthy" id="healthStatus">Healthy</strong>
+            </div>
+            <div class="health-insights" id="healthInsights"></div>
+          </section>
           <div class="breakdown" id="breakdown"></div>
           <div class="compliance">
             This calculator provides an estimate based on the figures entered. Final amounts may differ depending on HDB, CPF Board, IRAS, your bank, law firm, and prevailing rules at the point of transaction.
@@ -246,6 +253,6 @@
       </div>
     </main>
 
-    <script src="script.js"></script>
+    <script src="script.js?v=20260603-9"></script>
   </body>
 </html>

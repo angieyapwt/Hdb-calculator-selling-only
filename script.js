@@ -134,8 +134,8 @@ function getSellerData() {
       { label: "Bank penalty", value: -bankPenalty },
       { label: "Resale levy", value: -resaleLevy },
       { label: "Legal fee", value: -legal },
-      { label: "Miscellaneous fee", value: -misc },
-      { label: "Agent commission + GST", value: -commission },
+      { label: "Miscellaneous fee (cash only)", value: -misc },
+      { label: "Agent commission + GST (cash only)", value: -commission },
     ],
   };
 }
@@ -184,8 +184,11 @@ function getBuyerData() {
     commission -
     loan -
     grant;
+  const cashOnlyCosts = misc + commission;
+  const cpfEligibleNeeded = Math.max(totalCashAndCpfNeeded - cashOnlyCosts, 0);
+  const cpfUsed = Math.min(cpf, cpfEligibleNeeded);
+  const cashNeededBeforeSale = cashOnlyCosts + Math.max(cpfEligibleNeeded - cpf, 0);
 
-  const cashNeededAfterCpf = Math.max(totalCashAndCpfNeeded - cpf, 0);
   const purchaseLabel = isHdbPurchase ? "Next HDB purchase price" : "Private condo purchase price";
   const valuationLabel = isHdbPurchase ? "Valuation" : "Bank Valuation";
   const ltvLabel = loanType === "HDB loan" ? "Max HDB loan at 75% LTV" : "Max bank loan at 75% LTV";
@@ -196,8 +199,8 @@ function getBuyerData() {
     { label: "Buyer Stamp Duty", value: bsd },
     { label: `ABSD at ${absdRate}%`, value: absd, className: absd > 0 ? "warning" : "" },
     { label: "Legal fee", value: legal },
-    { label: "Miscellaneous fee", value: misc },
-    { label: "Agent commission + GST", value: commission },
+    { label: "Miscellaneous fee (cash only)", value: misc },
+    { label: "Agent commission + GST (cash only)", value: commission },
     { label: ltvLabel, value: maxLoan },
     { label: "Approved loan", value: -loan },
     ...(loanShortfall > 0
@@ -206,15 +209,122 @@ function getBuyerData() {
     ...(grant > 0 ? [{ label: "CPF housing grants", value: -grant }] : []),
     ...(isHdbPurchase ? [{ label: "Cash Over Valuation (COV)", value: valuationGap, className: valuationGap > 0 ? "warning" : "" }] : []),
     ...downpaymentRows,
-    { label: "Total OA available", value: -cpf },
-    { label: "Estimated cash needed after CPF", value: cashNeededAfterCpf, className: "highlight" },
+    { label: "CPF OA used", value: -cpfUsed },
+    { label: "Cash needed before estimated HDB sale proceeds", value: cashNeededBeforeSale, className: "highlight" },
   ];
 
   return {
     required: totalCashAndCpfNeeded,
-    cashNeededAfterCpf,
+    cpf,
+    cpfUsed,
+    cashOnlyCosts,
+    cashNeededBeforeSale,
+    cov: isHdbPurchase ? valuationGap : 0,
     rows: buyerRows,
   };
+}
+
+function cashTopUpAfterCpfAndSale(seller, buyer) {
+  return Math.max(buyer.cashNeededBeforeSale - seller.proceeds, 0);
+}
+
+function combinedBuyingRows(seller, buyer) {
+  const topUp = cashTopUpAfterCpfAndSale(seller, buyer);
+  const saleProceedsOffset = seller.proceeds >= 0 ? -seller.proceeds : seller.proceeds;
+  return [
+    ...buyer.rows,
+    { label: "Estimated HDB sale proceeds", value: saleProceedsOffset, className: seller.proceeds < 0 ? "warning" : "highlight" },
+    {
+      label: "Estimated cash top-up needed after CPF OA and estimated HDB sale proceeds",
+      value: topUp,
+      className: "highlight",
+    },
+  ];
+}
+
+function getHealthSnapshot() {
+  if (state.mode === "seller") {
+    const seller = getSellerData();
+    const status = seller.proceeds >= 200000 ? "Healthy" : seller.proceeds >= 80000 ? "Worth Planning" : "Review first before proceeding";
+    const tone = status === "Healthy" ? "healthy" : status === "Worth Planning" ? "planning" : "review";
+    const reason = seller.proceeds >= 0
+      ? `Estimated sale proceeds are ${money.format(seller.proceeds)} after the keyed-in loan, CPF refund, fees, and commission.`
+      : `The keyed-in sale figures show a shortfall of ${money.format(Math.abs(seller.proceeds))}, so the selling position may need closer review.`;
+
+    return {
+      status,
+      tone,
+      rows: [
+        { title: "Sale position", text: reason },
+        { title: "Suggested next step", text: "A follow-up review can help clarify the sale timeline, expected cash position, and suitable next steps before making a decision." },
+      ],
+    };
+  }
+
+  const seller = getSellerData();
+  const buyer = getBuyerData();
+  const topUp = cashTopUpAfterCpfAndSale(seller, buyer);
+  const reasons = [];
+  const saleShortfall = Math.abs(Math.min(seller.proceeds, 0));
+  if (saleShortfall > 0) reasons.push(`negative sale proceeds of ${money.format(saleShortfall)} will add to the cash top-up needed`);
+  if (topUp > 200000) reasons.push(`estimated cash top-up is above ${money.format(200000)}`);
+  if (buyer.cov > 0) reasons.push(`Cash Over Valuation is ${money.format(buyer.cov)}`);
+
+  let status = "Healthy";
+  if (saleShortfall > 0 || topUp > 200000 || reasons.length >= 2) status = "Review first before proceeding";
+  else if (reasons.length === 1) status = "Worth Planning";
+  const tone = status === "Healthy" ? "healthy" : status === "Worth Planning" ? "planning" : "review";
+  const modeText = state.mode === "hdb" ? "next HDB purchase" : "condo upgrade";
+  const reasonText = saleShortfall > 0
+    ? `Due to the negative sale proceeds, this ${modeText} may require an estimated cash top-up of ${money.format(topUp)} after CPF OA, sale shortfall, and purchase costs are considered.`
+    : reasons.length
+      ? `This ${modeText} may need closer planning because the ${reasons.join(", and ")}.`
+      : `Based on the keyed-in figures, this ${modeText} appears to have a good starting position.`;
+
+  return {
+    status,
+    tone,
+    rows: [
+      ...(saleShortfall > 0
+        ? [{ title: "Sale position", text: `The keyed-in sale figures show a shortfall of ${money.format(saleShortfall)}, so the selling position may need closer review.` }]
+        : []),
+      { title: "Readiness view", text: reasonText },
+      { title: "Suggested next step", text: getNextStepText(status, modeText) },
+    ],
+  };
+}
+
+function getNextStepText(status, modeText) {
+  if (status === "Healthy") {
+    return `The figures look workable as a first pass. A review can help refine the realistic ${modeText} budget, timeline, and suitable property options.`;
+  }
+  if (status === "Worth Planning") {
+    return `The figures may still work, but the cash flow and timeline should be sense-checked before shortlisting homes.`;
+  }
+  return `Before proceeding, it would be useful to review the numbers together and see whether the shortfall, CPF use, or timing can be improved.`;
+}
+
+function healthSummary() {
+  const snapshot = getHealthSnapshot();
+  return [
+    `Status: ${snapshot.status}`,
+    ...snapshot.rows.map((row) => `${row.title}: ${row.text}`),
+  ].join("\n");
+}
+
+function renderHealthSnapshot() {
+  const snapshot = getHealthSnapshot();
+  const badge = $("healthStatus");
+  badge.textContent = snapshot.status;
+  badge.className = `health-badge ${snapshot.tone}`;
+  $("healthInsights").innerHTML = snapshot.rows
+    .map((row, index) => `
+      <div class="health-row">
+        <span class="health-icon">${index + 1}</span>
+        <span><strong>${row.title}:</strong> ${row.text}</span>
+      </div>
+    `)
+    .join("");
 }
 
 function renderSeller() {
@@ -223,6 +333,7 @@ function renderSeller() {
   $("resultTotal").textContent = money.format(seller.proceeds);
   $("quickTotal").textContent = money.format(seller.proceeds);
   $("quickLabel").textContent = "Estimated sale proceeds";
+  renderHealthSnapshot();
   setBreakdown(seller.rows);
 }
 
@@ -232,28 +343,23 @@ function renderBuyer() {
   $("resultTotal").textContent = money.format(buyer.required);
   $("quickTotal").textContent = money.format(buyer.required);
   $("quickLabel").textContent = "Estimated total needed";
+  renderHealthSnapshot();
   setBreakdown(buyer.rows);
 }
 
 function renderBoth() {
   const seller = getSellerData();
   const buyer = getBuyerData();
-  const net = seller.proceeds - buyer.required;
+  const topUp = cashTopUpAfterCpfAndSale(seller, buyer);
   const target = state.mode === "hdb" ? "next HDB purchase" : "condo purchase";
 
-  $("resultKicker").textContent = "Estimated net position";
-  $("resultTotal").textContent = money.format(net);
-  $("quickTotal").textContent = money.format(net);
-  $("quickLabel").textContent = `Estimated balance after using HDB sale proceeds for ${target}`;
+  $("resultKicker").textContent = "Estimated cash top-up needed";
+  $("resultTotal").textContent = money.format(topUp);
+  $("quickTotal").textContent = money.format(topUp);
+  $("quickLabel").textContent = `After CPF OA and estimated HDB sale proceeds for ${target}`;
+  renderHealthSnapshot();
 
   setGroupedBreakdown([
-    {
-      title: "Overall",
-      rows: [
-        { label: "Estimated sale proceeds", value: seller.proceeds, className: "highlight" },
-        { label: "Estimated cash and/or CPF needed", value: buyer.required, className: "highlight" },
-      ],
-    },
     {
       title: "Selling",
       rows: [
@@ -263,7 +369,7 @@ function renderBoth() {
     },
     {
       title: "Buying",
-      rows: buyer.rows,
+      rows: combinedBuyingRows(seller, buyer),
     },
   ]);
 }
@@ -287,17 +393,16 @@ function getCurrentEstimate() {
 
   const seller = getSellerData();
   const buyer = getBuyerData();
-  const net = seller.proceeds - buyer.required;
+  const topUp = cashTopUpAfterCpfAndSale(seller, buyer);
   return {
     mode: getModeLabel(),
-    resultLabel: "Estimated net position",
-    resultTotal: money.format(net),
+    resultLabel: "Estimated cash top-up needed after CPF OA and estimated HDB sale proceeds",
+    resultTotal: money.format(topUp),
     rows: [
       ...seller.rows,
       { label: "Estimated sale proceeds", value: seller.proceeds },
-      ...buyer.rows,
+      ...combinedBuyingRows(seller, buyer),
       { label: "Estimated cash and/or CPF needed", value: buyer.required },
-      { label: "Estimated net balance", value: net },
     ],
   };
 }
@@ -308,18 +413,16 @@ function estimateSummary() {
   if (state.mode === "hdb" || state.mode === "condo") {
     const seller = getSellerData();
     const buyer = getBuyerData();
-    const net = seller.proceeds - buyer.required;
     const sellerLines = [
       ...seller.rows,
       { label: "Estimated sale proceeds", value: seller.proceeds },
     ];
-    const buyerLines = buyer.rows;
+    const buyerLines = combinedBuyingRows(seller, buyer);
 
     return [
       `Mode: ${estimate.mode}`,
       `${estimate.resultLabel}: ${estimate.resultTotal}`,
       `Estimated cash and/or CPF needed: ${money.format(buyer.required)}`,
-      `Estimated net balance: ${money.format(net)}`,
       "",
       ...sellerLines.map((row) => `${row.label}: ${money.format(row.value)}`),
       "",
@@ -350,8 +453,8 @@ function fullInputDetails() {
     inputValue("Bank penalty, if any", "bankPenalty"),
     inputValue("Resale levy, if applicable", "resaleLevy"),
     inputValue("Seller legal fee", "sellerLegal"),
-    inputValue("Seller miscellaneous fee", "sellerMisc"),
-    { label: "Seller agent commission + GST", value: $("sellerCommissionOn").checked ? `${$("sellerCommissionRate").value}%` : "Not included" },
+    inputValue("Seller miscellaneous fee (cash only)", "sellerMisc"),
+    { label: "Seller agent commission + GST (cash only)", value: $("sellerCommissionOn").checked ? `${$("sellerCommissionRate").value}%` : "Not included" },
   ];
 
   const buyerInputs = [
@@ -363,8 +466,8 @@ function fullInputDetails() {
     ...(state.mode === "hdb" ? [inputValue("CPF housing grants, if any", "buyerGrant")] : []),
     { label: state.mode === "hdb" ? "SPR ABSD option" : "ABSD profile", value: $("absdProfile").selectedOptions[0].textContent },
     inputValue("Buyer legal fee", "buyerLegal"),
-    inputValue("Buyer miscellaneous fee", "buyerMisc"),
-    { label: "Buyer agent commission + GST", value: $("buyerCommissionOn").checked ? `${$("buyerCommissionRate").value}%` : "Not included" },
+    inputValue("Buyer miscellaneous fee (cash only)", "buyerMisc"),
+    { label: "Buyer agent commission + GST (cash only)", value: $("buyerCommissionOn").checked ? `${$("buyerCommissionRate").value}%` : "Not included" },
   ];
 
   if (state.mode === "seller") return sellerInputs;
@@ -390,13 +493,14 @@ function leadPayload() {
     inputs: fullInputDetails(),
     inputSummary: fullInputSummary(),
     summary: estimateSummary(),
+    analysisSummary: healthSummary(),
     dataConsent: $("dataConsent").checked,
   };
 }
 
 function updateLeadPreview() {
   const preview = $("leadEstimatePreview");
-  if (preview) preview.textContent = estimateSummary();
+  if (preview) preview.textContent = [estimateSummary(), "", "Financial Health Snapshot:", healthSummary()].join("\n");
 }
 
 async function submitLead(payload) {
@@ -425,6 +529,9 @@ function openWhatsapp(payload) {
     "",
     "Calculated estimate:",
     payload.summary,
+    "",
+    "Financial health snapshot:",
+    payload.analysisSummary,
     "",
     `Notes: ${payload.notes || "-"}`,
   ].join("\n");
@@ -466,8 +573,8 @@ function updateBuyerModeCopy() {
 
   $("buyerPanelTitle").textContent = isHdbPurchase ? "HDB buyer calculator" : "Condo buyer calculator";
   $("buyerPanelDescription").textContent = isHdbPurchase
-    ? "Estimate cash needed after HDB or bank loan, CPF OA, grants, stamp duties, fees, and commission."
-    : "Estimate cash needed after bank loan, CPF OA, stamp duties, fees, and commission.";
+    ? "Estimate cash needed after HDB or bank loan, CPF OA, grants, stamp duties, and cash-only misc/commission costs."
+    : "Estimate cash needed after bank loan, CPF OA, stamp duties, and cash-only misc/commission costs.";
   $("purchasePriceLabel").textContent = isHdbPurchase ? "Next HDB purchase price" : "Private condo purchase price";
   $("valuationLabel").textContent = isHdbPurchase ? "Valuation" : "Bank Valuation";
   $("absdLabel").textContent = isHdbPurchase ? "SPR ABSD option" : "ABSD profile";

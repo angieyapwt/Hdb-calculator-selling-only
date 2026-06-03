@@ -318,6 +318,84 @@ h1 {
   gap: 10px;
 }
 
+.health-card {
+  display: grid;
+  gap: 12px;
+  margin: 0 0 20px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfefc;
+}
+
+.health-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+}
+
+.health-heading span {
+  color: var(--primary-dark);
+  font-size: 0.82rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.health-badge {
+  flex: 0 0 auto;
+  border-radius: 999px;
+  padding: 6px 10px;
+  font-size: 0.78rem;
+  font-weight: 900;
+}
+
+.health-badge.healthy {
+  background: #e4f6ea;
+  color: #0b5d34;
+}
+
+.health-badge.planning {
+  background: #fff4db;
+  color: #8a5a10;
+}
+
+.health-badge.review {
+  background: #ffebe8;
+  color: #9a2f24;
+}
+
+.health-insights {
+  display: grid;
+  gap: 8px;
+}
+
+.health-row {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+  color: var(--muted);
+  font-size: 0.86rem;
+  line-height: 1.42;
+}
+
+.health-row strong {
+  color: var(--ink);
+}
+
+.health-icon {
+  display: inline-grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--soft);
+  color: var(--primary-dark);
+  font-size: 0.8rem;
+  font-weight: 900;
+}
+
 .breakdown-group {
   display: grid;
   gap: 10px;
@@ -606,4 +684,5 @@ h1 {
   .modal {
     padding: 18px;
   }
+
 }
