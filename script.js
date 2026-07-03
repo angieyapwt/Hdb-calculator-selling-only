@@ -1,38 +1,43 @@
-const FORM_ENDPOINT = "https://script.google.com/macros/s/AKfycbzKQK18-FTOyS7u0e-XN4_hEtEbaxemlw6PWOenvCpsCBovOm9799K7kAjbSu8kAtZUtA/exec";
-const WHATSAPP_NUMBER = "6583963088";
 const GST_RATE = 0.09;
+const WHATSAPP_NUMBER = "+6583963088";
+const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyGFLMQqS42t-ZGHyhnYBgYv3kILp9IhY903xXVbSEH3vv_SIaEmX9o-aohJ_nynu-ncA/exec";
+const HDB_LOAN_LTV = 0.75;
+const BANK_LOAN_LTV = 0.75;
 
 const state = {
-  mode: "buying",
+  mode: "seller",
+  leadSubmitted: false,
 };
 
-const form = document.querySelector("#calculator");
-const buttons = document.querySelectorAll(".mode-btn");
-const panels = document.querySelectorAll(".form-panel");
-const resultLabel = document.querySelector("#resultLabel");
-const primaryResult = document.querySelector("#primaryResult");
-const heroMetric = document.querySelector("#heroMetric");
-const heroCaption = document.querySelector("#heroCaption");
-const breakdown = document.querySelector("#breakdown");
-const modal = document.querySelector("#leadModal");
-const statusLine = document.querySelector("#status");
-const healthBadge = document.querySelector("#healthBadge");
-const readinessText = document.querySelector("#readinessText");
-const nextStepText = document.querySelector("#nextStepText");
-const modalEstimate = document.querySelector("#modalEstimate");
-const submitLeadButton = document.querySelector("#submitLead");
-let leadSubmitted = false;
+const money = new Intl.NumberFormat("en-SG", {
+  style: "currency",
+  currency: "SGD",
+  maximumFractionDigits: 0,
+});
 
-function money(value) {
-  const sign = value < 0 ? "-" : "";
-  return `${sign}$${Math.abs(Math.round(value)).toLocaleString("en-SG")}`;
+const $ = (id) => document.getElementById(id);
+
+function cleanNumber(value) {
+  return Number(String(value || "").replace(/[^\d.-]/g, "")) || 0;
 }
 
-function numberFromMoney(value) {
-  return Number(String(value).replace(/[^\d.-]/g, "")) || 0;
+function num(id) {
+  const input = $(id);
+  return cleanNumber(input ? input.value : 0);
 }
 
-function stampDuty(price) {
+function formatMoneyInput(input) {
+  input.value = money.format(Math.max(cleanNumber(input.value), 0));
+}
+
+function clampDeposit(id) {
+  const input = $(id);
+  const value = cleanNumber(input.value);
+  if (value > 5000) input.value = money.format(5000);
+  if (value < 0) input.value = money.format(0);
+}
+
+function buyerStampDuty(amount) {
   const tiers = [
     [180000, 0.01],
     [180000, 0.02],
@@ -41,428 +46,672 @@ function stampDuty(price) {
     [1500000, 0.05],
     [Infinity, 0.06],
   ];
-  let remaining = price;
-  let total = 0;
+
+  let remaining = amount;
+  let duty = 0;
+
   for (const [cap, rate] of tiers) {
+    if (remaining <= 0) break;
     const taxable = Math.min(remaining, cap);
-    if (taxable <= 0) break;
-    total += taxable * rate;
+    duty += taxable * rate;
     remaining -= taxable;
   }
-  return total;
+
+  return Math.floor(Math.max(duty, amount > 0 ? 1 : 0));
 }
 
-function values() {
-  const data = new FormData(form);
-  const get = (name) => numberFromMoney(data.get(name));
-  const rate = (name) => Number(data.get(name)) || 0;
+function commissionWithGst(base, rate, enabled) {
+  if (!enabled) return 0;
+  const commission = base * (rate / 100);
+  return commission + commission * GST_RATE;
+}
 
-  const price = get("purchasePrice");
-  const cpfAvailable = get("cpf");
-  const cashSavings = get("cash");
-  const stampBasis = price;
-  const maxBankLoan = price * 0.75;
-  const approvedLoan = Math.min(get("loan"), maxBankLoan);
-  const bsd = stampDuty(stampBasis);
-  const absdRate = Number(data.get("absd")) || 0;
-  const absd = stampBasis * (absdRate / 100);
-  const buyerLegal = get("buyerLegal");
-  const buyerMisc = get("buyerMisc");
-  const buyerCommissionRate = rate("buyerCommissionRate");
-  const buyerCommission = data.get("buyerCommissionOn")
-    ? price * (buyerCommissionRate / 100) * (1 + GST_RATE)
-    : 0;
-  const downpayment = Math.max(price - approvedLoan, 0);
-  const cashDownpaymentGuide = price * 0.05;
-  const cpfCashDownpaymentGuide = price * 0.2;
-  const cpfUsed = Math.min(cpfAvailable, Math.max(downpayment - cashDownpaymentGuide, 0) + bsd + absd);
-  const cashNeeded = Math.max(downpayment - cpfUsed, 0) + bsd + absd + buyerLegal + buyerMisc + buyerCommission;
-  const cashTopUpAfterCpf = Math.max(cashNeeded - cashSavings, 0);
-  const purchaseRequirement = downpayment + bsd + absd + buyerLegal + buyerMisc + buyerCommission;
+function setBreakdown(rows) {
+  $("breakdown").innerHTML = rows
+    .map(
+      (row) => `
+        <div class="breakdown-row ${row.className || ""}">
+          <span>${row.label}</span>
+          <strong>${money.format(row.value)}</strong>
+        </div>
+      `
+    )
+    .join("");
+}
 
-  const salePrice = get("sellingPrice");
-  const outstandingLoan = get("outstandingLoan");
-  const cpfRefund = get("cpfRefund");
-  const ssd = get("ssd");
-  const bankPenalty = get("bankPenalty");
-  const sellerLegal = get("sellerLegal");
-  const sellerMisc = get("sellerMisc");
-  const sellerCommissionRate = rate("sellerCommissionRate");
-  const sellerCommission = data.get("sellerCommissionOn")
-    ? salePrice * (sellerCommissionRate / 100) * (1 + GST_RATE)
-    : 0;
-  const saleDeductions = outstandingLoan + cpfRefund + ssd + bankPenalty + sellerLegal + sellerMisc + sellerCommission;
-  const saleProceeds = salePrice - saleDeductions;
-  const netPosition = saleProceeds - purchaseRequirement;
+function setGroupedBreakdown(groups) {
+  $("breakdown").innerHTML = groups
+    .map((group) => {
+      const heading = group.title ? `<div class="breakdown-heading">${group.title}</div>` : "";
+      const rows = group.rows
+        .map(
+          (row) => `
+            <div class="breakdown-row ${row.className || ""}">
+              <span>${row.label}</span>
+              <strong>${money.format(row.value)}</strong>
+            </div>
+          `
+        )
+        .join("");
+      return `<section class="breakdown-group">${heading}${rows}</section>`;
+    })
+    .join("");
+}
+
+function getSellerData() {
+  const sellingPrice = num("sellingPrice");
+  const outstandingLoan = num("sellerLoan");
+  const cpfRefund = num("cpfRefund");
+  const outstandingHip = num("outstandingHip");
+  const bankPenalty = num("bankPenalty");
+  const resaleLevy = num("resaleLevy");
+  const legal = num("sellerLegal");
+  const misc = num("sellerMisc");
+  const commission = commissionWithGst(
+    sellingPrice,
+    num("sellerCommissionRate"),
+    $("sellerCommissionOn").checked
+  );
+
+  const proceeds =
+    sellingPrice -
+    outstandingLoan -
+    cpfRefund -
+    outstandingHip -
+    bankPenalty -
+    resaleLevy -
+    legal -
+    misc -
+    commission;
 
   return {
-    price,
-    cpfAvailable,
-    cashSavings,
-    stampBasis,
-    maxBankLoan,
-    approvedLoan,
-    bsd,
-    absdRate,
-    absd,
-    buyerLegal,
-    buyerMisc,
-    buyerCommission,
-    buyerCommissionRate,
-    downpayment,
-    cashDownpaymentGuide,
-    cpfCashDownpaymentGuide,
-    cpfUsed,
-    cashNeeded,
-    cashTopUpAfterCpf,
-    purchaseRequirement,
-    salePrice,
-    outstandingLoan,
-    cpfRefund,
-    ssd,
-    bankPenalty,
-    sellerLegal,
-    sellerMisc,
-    sellerCommission,
-    sellerCommissionRate,
-    saleDeductions,
-    saleProceeds,
-    netPosition,
+    proceeds,
+    rows: [
+      { label: "Selling price", value: sellingPrice, className: "highlight" },
+      { label: "Outstanding loan", value: -outstandingLoan },
+      { label: "CPF refund", value: -cpfRefund },
+      { label: "Outstanding HIP", value: -outstandingHip },
+      { label: "Bank penalty", value: -bankPenalty },
+      { label: "Resale levy", value: -resaleLevy },
+      { label: "Legal fee", value: -legal },
+      { label: "Miscellaneous fee (cash only)", value: -misc },
+      { label: "Agent commission + GST (cash only)", value: -commission },
+    ],
   };
 }
 
-function row(label, value, tone = "") {
-  return `<div class="row ${tone}"><span>${label}</span><strong>${money(value)}</strong></div>`;
+function getBuyerData() {
+  const isHdbPurchase = state.mode === "hdb";
+  const purchasePrice = num("purchasePrice");
+  const valuation = isHdbPurchase ? num("valuation") : purchasePrice;
+  const loanValue = Math.min(purchasePrice, valuation || purchasePrice);
+  const loanType = $("loanType").value;
+  const keyedLoan = loanType === "No loan" ? 0 : num("approvedLoan");
+  const loanRate = loanType === "HDB loan" ? HDB_LOAN_LTV : BANK_LOAN_LTV;
+  const maxLoan = loanType === "No loan" ? 0 : loanValue * loanRate;
+  const loan = Math.min(keyedLoan, maxLoan);
+  const loanShortfall = loanType === "No loan" ? 0 : Math.max(maxLoan - loan, 0);
+  const cpf = num("cpfAvailable");
+  const grant = isHdbPurchase ? num("buyerGrant") : 0;
+  const stampDutyBase = Math.max(purchasePrice, valuation);
+  const bsd = buyerStampDuty(stampDutyBase);
+  const absdRate = Number($("absdProfile").value);
+  const absd = stampDutyBase * (absdRate / 100);
+  const legal = num("buyerLegal");
+  const misc = num("buyerMisc");
+  const valuationGap = Math.max(purchasePrice - loanValue, 0);
+  const downpaymentRows =
+    loanType === "No loan"
+      ? [{ label: "No loan purchase amount", value: purchasePrice, className: "warning" }]
+      : loanType === "HDB loan"
+        ? [{ label: "25% CPF and/or cash downpayment guide", value: loanValue * 0.25, className: "warning" }]
+        : [
+            { label: "5% cash downpayment guide", value: loanValue * 0.05, className: "warning" },
+            { label: "20% CPF and/or cash downpayment guide", value: loanValue * 0.2, className: "warning" },
+          ];
+  const commission = commissionWithGst(
+    purchasePrice,
+    num("buyerCommissionRate"),
+    $("buyerCommissionOn").checked
+  );
+
+  const totalCashAndCpfNeeded =
+    purchasePrice +
+    bsd +
+    absd +
+    legal +
+    misc +
+    commission -
+    loan -
+    grant;
+  const cashOnlyCosts = misc + commission;
+  const cpfEligibleNeeded = Math.max(totalCashAndCpfNeeded - cashOnlyCosts, 0);
+  const cpfUsed = Math.min(cpf, cpfEligibleNeeded);
+  const cashNeededBeforeSale = cashOnlyCosts + Math.max(cpfEligibleNeeded - cpf, 0);
+
+  const purchaseLabel = isHdbPurchase ? "Next HDB purchase price" : "Private condo purchase price";
+  const valuationLabel = isHdbPurchase ? "Valuation" : "Bank Valuation";
+  const ltvLabel = loanType === "HDB loan" ? "Max HDB loan at 75% LTV" : "Max bank loan at 75% LTV";
+  const buyerRows = [
+    { label: purchaseLabel, value: purchasePrice, className: "highlight" },
+    ...(isHdbPurchase ? [{ label: valuationLabel, value: valuation }] : []),
+    { label: "Stamp duty basis", value: stampDutyBase },
+    { label: "Buyer Stamp Duty", value: bsd },
+    { label: `ABSD at ${absdRate}%`, value: absd, className: absd > 0 ? "warning" : "" },
+    { label: "Legal fee", value: legal },
+    { label: "Miscellaneous fee (cash only)", value: misc },
+    { label: "Agent commission + GST (cash only)", value: commission },
+    { label: ltvLabel, value: maxLoan },
+    { label: "Approved loan", value: -loan },
+    ...(loanShortfall > 0
+      ? [{ label: "Loan shortfall to be funded", value: loanShortfall, className: "warning" }]
+      : []),
+    ...(grant > 0 ? [{ label: "CPF housing grants", value: -grant }] : []),
+    ...(isHdbPurchase ? [{ label: "Cash Over Valuation (COV)", value: valuationGap, className: valuationGap > 0 ? "warning" : "" }] : []),
+    ...downpaymentRows,
+    { label: "CPF OA used", value: -cpfUsed },
+    { label: "Cash needed before estimated HDB sale proceeds", value: cashNeededBeforeSale, className: "highlight" },
+  ];
+
+  return {
+    required: totalCashAndCpfNeeded,
+    cpf,
+    cpfUsed,
+    cashOnlyCosts,
+    cashNeededBeforeSale,
+    cov: isHdbPurchase ? valuationGap : 0,
+    rows: buyerRows,
+  };
 }
 
-function section(label) {
-  return `<div class="row section"><span>${label}</span><strong></strong></div>`;
+function cashTopUpAfterCpfAndSale(seller, buyer) {
+  return Math.max(buyer.cashNeededBeforeSale - seller.proceeds, 0);
 }
 
-function buyerRows(v) {
+function combinedBuyingRows(seller, buyer) {
+  const topUp = cashTopUpAfterCpfAndSale(seller, buyer);
+  const saleProceedsOffset = seller.proceeds >= 0 ? -seller.proceeds : seller.proceeds;
   return [
-    row("Private condo purchase price", v.price),
-    row("Stamp duty basis", v.stampBasis),
-    row("Buyer Stamp Duty", v.bsd),
-    row(`ABSD at ${v.absdRate}%`, v.absd),
-    row("Legal fee", v.buyerLegal),
-    row("Miscellaneous fee (cash only)", v.buyerMisc),
-    row("Agent commission + GST (cash only)", v.buyerCommission),
-    row("Max bank loan at 75% LTV", v.maxBankLoan),
-    row("Approved loan", -v.approvedLoan, "positive"),
-    row("5% cash downpayment guide", v.cashDownpaymentGuide),
-    row("20% CPF and/or cash downpayment guide", v.cpfCashDownpaymentGuide),
-    row("CPF OA used", -v.cpfUsed, "positive"),
-    row("Cash needed", v.cashNeeded, v.cashNeeded > 0 ? "warning" : "positive"),
-    row("Estimated cash top-up needed after CPF OA", v.cashTopUpAfterCpf, v.cashTopUpAfterCpf > 0 ? "warning" : "positive"),
+    ...buyer.rows,
+    { label: "Estimated HDB sale proceeds", value: saleProceedsOffset, className: seller.proceeds < 0 ? "warning" : "highlight" },
+    {
+      label: "Estimated cash top-up needed after CPF OA and estimated HDB sale proceeds",
+      value: topUp,
+      className: "highlight",
+    },
   ];
 }
 
-function sellerRows(v) {
-  return [
-    row("Selling price", v.salePrice),
-    row("Outstanding loan", -v.outstandingLoan, "warning"),
-    row("CPF refund with accrued interest", -v.cpfRefund, "warning"),
-    row("Seller stamp duty, if any", -v.ssd, "warning"),
-    row("Bank penalty, if any", -v.bankPenalty, "warning"),
-    row("Legal fee", -v.sellerLegal, "warning"),
-    row("Miscellaneous fee (cash only)", -v.sellerMisc, "warning"),
-    row("Agent commission + GST (cash only)", -v.sellerCommission, "warning"),
-    row("Estimated cash proceeds", v.saleProceeds, v.saleProceeds >= 0 ? "positive" : "warning"),
-  ];
-}
+function getHealthSnapshot() {
+  if (state.mode === "seller") {
+    const seller = getSellerData();
+    const status = seller.proceeds >= 200000 ? "Healthy" : seller.proceeds >= 80000 ? "Worth Planning" : "Review first before proceeding";
+    const tone = status === "Healthy" ? "healthy" : status === "Worth Planning" ? "planning" : "review";
+    const reason = seller.proceeds >= 0
+      ? `Estimated sale proceeds are ${money.format(seller.proceeds)} after the keyed-in loan, CPF refund, fees, and commission.`
+      : `The keyed-in sale figures show a shortfall of ${money.format(Math.abs(seller.proceeds))}, so the selling position may need closer review.`;
 
-function healthSnapshot(v) {
-  let healthy;
-  let subject;
-
-  if (state.mode === "selling") {
-    healthy = v.saleProceeds > 0;
-    subject = "condo sale";
-  } else if (state.mode === "both") {
-    healthy = v.netPosition >= 0;
-    subject = "condo upgrade";
-  } else {
-    healthy = v.cashTopUpAfterCpf <= Math.max(v.cashNeeded * 0.25, 50000);
-    subject = "condo purchase";
-  }
-
-  if (healthy) {
     return {
-      badge: "Healthy",
-      review: false,
-      readiness: `Based on the keyed-in figures, this ${subject} appears to have a good starting position.`,
-      nextStep: "The figures look workable as a first pass. A review can help refine the realistic condo upgrade budget, timeline, and suitable property options.",
+      status,
+      tone,
+      rows: [
+        { title: "Sale position", text: reason },
+        { title: "Suggested next step", text: "A follow-up review can help clarify the sale timeline, expected cash position, and suitable next steps before making a decision." },
+      ],
     };
   }
 
+  const seller = getSellerData();
+  const buyer = getBuyerData();
+  const topUp = cashTopUpAfterCpfAndSale(seller, buyer);
+  const reasons = [];
+  const saleShortfall = Math.abs(Math.min(seller.proceeds, 0));
+  if (saleShortfall > 0) reasons.push(`negative sale proceeds of ${money.format(saleShortfall)} will add to the cash top-up needed`);
+  if (topUp > 200000) reasons.push(`estimated cash top-up is above ${money.format(200000)}`);
+  if (buyer.cov > 0) reasons.push(`Cash Over Valuation is ${money.format(buyer.cov)}`);
+
+  let status = "Healthy";
+  if (saleShortfall > 0 || topUp > 200000 || reasons.length >= 2) status = "Review first before proceeding";
+  else if (reasons.length === 1) status = "Worth Planning";
+  const tone = status === "Healthy" ? "healthy" : status === "Worth Planning" ? "planning" : "review";
+  const modeText = state.mode === "hdb" ? "next HDB purchase" : "condo upgrade";
+  const reasonText = saleShortfall > 0
+    ? `Due to the negative sale proceeds, this ${modeText} may require an estimated cash top-up of ${money.format(topUp)} after CPF OA, sale shortfall, and purchase costs are considered.`
+    : reasons.length
+      ? `This ${modeText} may need closer planning because the ${reasons.join(", and ")}.`
+      : `Based on the keyed-in figures, this ${modeText} appears to have a good starting position.`;
+
   return {
-    badge: "Review first before proceeding",
-    review: true,
-    readiness: `Based on the keyed-in figures, this ${subject} may need a closer review before proceeding.`,
-    nextStep: "A sense-check can help refine the budget, cash buffer, timeline, and suitable property options before the next commitment.",
+    status,
+    tone,
+    rows: [
+      ...(saleShortfall > 0
+        ? [{ title: "Sale position", text: `The keyed-in sale figures show a shortfall of ${money.format(saleShortfall)}, so the selling position may need closer review.` }]
+        : []),
+      { title: "Readiness view", text: reasonText },
+      { title: "Suggested next step", text: getNextStepText(status, modeText) },
+    ],
   };
 }
 
-function render() {
-  const v = values();
-  document.body.classList.toggle("mode-both", state.mode === "both");
-
-  panels.forEach((panel) => {
-    panel.classList.toggle("active", panel.dataset.panel === state.mode || state.mode === "both");
-  });
-
-  let label;
-  let primary;
-  let rows;
-
-  if (state.mode === "selling") {
-    label = "Estimated cash proceeds";
-    primary = v.saleProceeds;
-    rows = sellerRows(v);
-  } else if (state.mode === "both") {
-    label = "Estimated net position";
-    primary = v.netPosition;
-    rows = [
-      row("Estimated sale proceeds", v.saleProceeds, "positive"),
-      row("Estimated purchase requirement", -v.purchaseRequirement, "warning"),
-      row("Estimated net position", v.netPosition, v.netPosition >= 0 ? "positive" : "warning"),
-      section("Selling summary"),
-      ...sellerRows(v),
-      section("Buying summary"),
-      ...buyerRows(v),
-    ];
-  } else {
-    label = "Estimated buyer cash / CPF required";
-    primary = v.purchaseRequirement;
-    rows = buyerRows(v);
+function getNextStepText(status, modeText) {
+  if (status === "Healthy") {
+    return `The figures look workable as a first pass. A review can help refine the realistic ${modeText} budget, timeline, and suitable property options.`;
   }
-
-  resultLabel.textContent = label;
-  heroCaption.textContent = label;
-  primaryResult.textContent = money(primary);
-  heroMetric.textContent = money(primary);
-  breakdown.innerHTML = rows.join("");
-  renderHealth(v);
-  renderModalEstimate(v);
-}
-
-function renderHealth(v) {
-  const health = healthSnapshot(v);
-  healthBadge.textContent = health.badge;
-  healthBadge.classList.toggle("review", health.review);
-  readinessText.textContent = health.readiness;
-  nextStepText.textContent = health.nextStep;
-}
-
-function modalRows(v) {
-  let rows;
-  if (state.mode === "selling") {
-    rows = [
-      row("Current mode", 0).replace("<strong>$0</strong>", "<strong>Selling condo</strong>"),
-      ...sellerRows(v),
-    ];
-  } else if (state.mode === "both") {
-    rows = [
-      row("Current mode", 0).replace("<strong>$0</strong>", "<strong>Buying & selling condo</strong>"),
-      row("Estimated sale proceeds", v.saleProceeds, "positive"),
-      row("Estimated purchase requirement", -v.purchaseRequirement, "warning"),
-      row("Estimated net position", v.netPosition, v.netPosition >= 0 ? "positive" : "warning"),
-      section("Selling details"),
-      ...sellerRows(v),
-      section("Buying details"),
-      ...buyerRows(v),
-    ];
-  } else {
-    rows = [
-      row("Current mode", 0).replace("<strong>$0</strong>", "<strong>Buying condo</strong>"),
-      ...buyerRows(v),
-    ];
+  if (status === "Worth Planning") {
+    return `The figures may still work, but the cash flow and timeline should be sense-checked before shortlisting homes.`;
   }
-
-  return rows;
+  return `Before proceeding, it would be useful to review the numbers together and see whether the shortfall, CPF use, or timing can be improved.`;
 }
 
-function renderModalEstimate(v = values()) {
-  modalEstimate.innerHTML = `<div class="modal-summary">${modalRows(v).join("")}</div>`;
-}
-
-function setMode(mode) {
-  state.mode = mode;
-  buttons.forEach((button) => button.classList.toggle("active", button.dataset.mode === mode));
-  render();
-}
-
-function normaliseMoneyInput(input) {
-  input.value = money(numberFromMoney(input.value));
-}
-
-function leadPayload() {
-  const v = values();
-  return {
-    createdAt: new Date().toISOString(),
-    mode: state.mode,
-    lead: {
-      name: document.querySelector("#leadName").value.trim(),
-      phone: document.querySelector("#leadPhone").value.trim(),
-      preferredTime: document.querySelector("#leadTime").value,
-      notes: document.querySelector("#leadNotes").value.trim(),
-    },
-    summary: {
-      resultLabel: resultLabel.textContent,
-      primaryResult: primaryResult.textContent,
-      estimatedSaleProceeds: money(v.saleProceeds),
-      estimatedPurchaseRequirement: money(v.purchaseRequirement),
-      estimatedNetPosition: money(v.netPosition),
-    },
-    itemised: itemisedLines(v),
-    values: v,
-  };
-}
-
-function itemisedLines(v) {
-  const lines = [];
-  if (state.mode === "selling" || state.mode === "both") {
-    lines.push("Selling summary");
-    sellerRows(v).forEach((html) => lines.push(textFromRow(html)));
-  }
-  if (state.mode === "buying" || state.mode === "both") {
-    lines.push("Buying summary");
-    buyerRows(v).forEach((html) => lines.push(textFromRow(html)));
-  }
-  return lines;
-}
-
-function textFromRow(html) {
-  const match = html.match(/<span>(.*?)<\/span><strong>(.*?)<\/strong>/);
-  return match ? `${match[1]}: ${match[2]}` : "";
-}
-
-function whatsappMessage(payload) {
+function healthSummary() {
+  const snapshot = getHealthSnapshot();
   return [
-    "Hi Angie, I would like to sense check my condo figures.",
-    "",
-    `Name: ${payload.lead.name || "-"}`,
-    `WhatsApp: ${payload.lead.phone || "-"}`,
-    `Preferred contact time: ${payload.lead.preferredTime}`,
-    `Mode: ${payload.mode}`,
-    "",
-    "Estimate summary",
-    `${payload.summary.resultLabel}: ${payload.summary.primaryResult}`,
-    `Estimated sale proceeds: ${payload.summary.estimatedSaleProceeds}`,
-    `Estimated purchase requirement: ${payload.summary.estimatedPurchaseRequirement}`,
-    `Estimated net position: ${payload.summary.estimatedNetPosition}`,
-    "",
-    "Details",
-    ...payload.itemised,
-    "",
-    `Notes: ${payload.lead.notes || "-"}`,
+    `Status: ${snapshot.status}`,
+    ...snapshot.rows.map((row) => `${row.title}: ${row.text}`),
   ].join("\n");
 }
 
-function clearLeadErrors() {
-  statusLine.textContent = "";
-  statusLine.classList.remove("error");
-  ["leadName", "leadPhone"].forEach((id) => {
-    const input = document.querySelector(`#${id}`);
-    input.closest(".field").classList.remove("has-error");
-    document.querySelector(`#${id}Error`).textContent = "";
+function renderHealthSnapshot() {
+  const snapshot = getHealthSnapshot();
+  const badge = $("healthStatus");
+  badge.textContent = snapshot.status;
+  badge.className = `health-badge ${snapshot.tone}`;
+  $("healthInsights").innerHTML = snapshot.rows
+    .map((row, index) => `
+      <div class="health-row">
+        <span class="health-icon">${index + 1}</span>
+        <span><strong>${row.title}:</strong> ${row.text}</span>
+      </div>
+    `)
+    .join("");
+}
+
+function renderSeller() {
+  const seller = getSellerData();
+  $("resultKicker").textContent = "Estimated seller cash proceeds";
+  $("resultTotal").textContent = money.format(seller.proceeds);
+  $("quickTotal").textContent = money.format(seller.proceeds);
+  $("quickLabel").textContent = "Estimated sale proceeds";
+  renderHealthSnapshot();
+  setBreakdown(seller.rows);
+}
+
+function renderBuyer() {
+  const buyer = getBuyerData();
+  $("resultKicker").textContent = "Estimated cash and/or CPF needed";
+  $("resultTotal").textContent = money.format(buyer.required);
+  $("quickTotal").textContent = money.format(buyer.required);
+  $("quickLabel").textContent = "Estimated total needed";
+  renderHealthSnapshot();
+  setBreakdown(buyer.rows);
+}
+
+function renderBoth() {
+  const seller = getSellerData();
+  const buyer = getBuyerData();
+  const topUp = cashTopUpAfterCpfAndSale(seller, buyer);
+  const target = state.mode === "hdb" ? "next HDB purchase" : "condo purchase";
+
+  $("resultKicker").textContent = "Estimated cash top-up needed";
+  $("resultTotal").textContent = money.format(topUp);
+  $("quickTotal").textContent = money.format(topUp);
+  $("quickLabel").textContent = `After CPF OA and estimated HDB sale proceeds for ${target}`;
+  renderHealthSnapshot();
+
+  setGroupedBreakdown([
+    {
+      title: "Selling",
+      rows: [
+        ...seller.rows,
+        { label: "Estimated sale proceeds", value: seller.proceeds, className: "highlight" },
+      ],
+    },
+    {
+      title: "Buying",
+      rows: combinedBuyingRows(seller, buyer),
+    },
+  ]);
+}
+
+function getModeLabel() {
+  if (state.mode === "seller") return "I am Selling HDB";
+  if (state.mode === "hdb") return "I am Selling HDB and Buying HDB";
+  return "I am Selling HDB and Upgrading to Condo";
+}
+
+function getCurrentEstimate() {
+  if (state.mode === "seller") {
+    const seller = getSellerData();
+    return {
+      mode: getModeLabel(),
+      resultLabel: "Estimated seller cash proceeds",
+      resultTotal: money.format(seller.proceeds),
+      rows: seller.rows,
+    };
+  }
+
+  const seller = getSellerData();
+  const buyer = getBuyerData();
+  const topUp = cashTopUpAfterCpfAndSale(seller, buyer);
+  return {
+    mode: getModeLabel(),
+    resultLabel: "Estimated cash top-up needed after CPF OA and estimated HDB sale proceeds",
+    resultTotal: money.format(topUp),
+    rows: [
+      ...seller.rows,
+      { label: "Estimated sale proceeds", value: seller.proceeds },
+      ...combinedBuyingRows(seller, buyer),
+      { label: "Estimated cash and/or CPF needed", value: buyer.required },
+    ],
+  };
+}
+
+function estimateSummary() {
+  const estimate = getCurrentEstimate();
+
+  if (state.mode === "hdb" || state.mode === "condo") {
+    const seller = getSellerData();
+    const buyer = getBuyerData();
+    const sellerLines = [
+      ...seller.rows,
+      { label: "Estimated sale proceeds", value: seller.proceeds },
+    ];
+    const buyerLines = combinedBuyingRows(seller, buyer);
+
+    return [
+      `Mode: ${estimate.mode}`,
+      `${estimate.resultLabel}: ${estimate.resultTotal}`,
+      `Estimated cash and/or CPF needed: ${money.format(buyer.required)}`,
+      "",
+      ...sellerLines.map((row) => `${row.label}: ${money.format(row.value)}`),
+      "",
+      "",
+      ...buyerLines.map((row) => `${row.label}: ${money.format(row.value)}`),
+    ].join("\n");
+  }
+
+  const lines = [
+    `Mode: ${estimate.mode}`,
+    `${estimate.resultLabel}: ${estimate.resultTotal}`,
+    "",
+    ...estimate.rows.map((row) => `${row.label}: ${money.format(row.value)}`),
+  ];
+  return lines.join("\n");
+}
+
+function inputValue(label, id) {
+  return { label, value: $(id).value || money.format(0) };
+}
+
+function fullInputDetails() {
+  const sellerInputs = [
+    inputValue("Selling price", "sellingPrice"),
+    inputValue("Outstanding loan", "sellerLoan"),
+    inputValue("CPF refund with accrued interest", "cpfRefund"),
+    inputValue("Outstanding HIP, if any", "outstandingHip"),
+    inputValue("Bank penalty, if any", "bankPenalty"),
+    inputValue("Resale levy, if applicable", "resaleLevy"),
+    inputValue("Seller legal fee", "sellerLegal"),
+    inputValue("Seller miscellaneous fee (cash only)", "sellerMisc"),
+    { label: "Seller agent commission + GST (cash only)", value: $("sellerCommissionOn").checked ? `${$("sellerCommissionRate").value}%` : "Not included" },
+  ];
+
+  const buyerInputs = [
+    inputValue(state.mode === "hdb" ? "Next HDB purchase price" : "Private condo purchase price", "purchasePrice"),
+    ...(state.mode === "hdb" ? [inputValue("Valuation", "valuation")] : []),
+    { label: "Loan type", value: $("loanType").value },
+    inputValue("Approved loan amount", "approvedLoan"),
+    inputValue("Total OA available", "cpfAvailable"),
+    ...(state.mode === "hdb" ? [inputValue("CPF housing grants, if any", "buyerGrant")] : []),
+    { label: state.mode === "hdb" ? "SPR ABSD option" : "ABSD profile", value: $("absdProfile").selectedOptions[0].textContent },
+    inputValue("Buyer legal fee", "buyerLegal"),
+    inputValue("Buyer miscellaneous fee (cash only)", "buyerMisc"),
+    { label: "Buyer agent commission + GST (cash only)", value: $("buyerCommissionOn").checked ? `${$("buyerCommissionRate").value}%` : "Not included" },
+  ];
+
+  if (state.mode === "seller") return sellerInputs;
+  return [...sellerInputs, ...buyerInputs];
+}
+
+function fullInputSummary() {
+  return fullInputDetails()
+    .map((item) => `${item.label}: ${item.value}`)
+    .join("\n");
+}
+
+function leadPayload() {
+  const estimate = getCurrentEstimate();
+  return {
+    name: $("leadName").value.trim(),
+    phone: $("leadPhone").value.trim(),
+    contactTime: $("leadContactTime").value,
+    notes: $("leadNotes").value.trim(),
+    mode: estimate.mode,
+    resultLabel: estimate.resultLabel,
+    resultTotal: estimate.resultTotal,
+    inputs: fullInputDetails(),
+    inputSummary: fullInputSummary(),
+    summary: estimateSummary(),
+    analysisSummary: healthSummary(),
+    dataConsent: $("dataConsent").checked,
+  };
+}
+
+function updateLeadPreview() {
+  const preview = $("leadEstimatePreview");
+  if (preview) preview.textContent = [estimateSummary(), "", "Financial Health Snapshot:", healthSummary()].join("\n");
+}
+
+async function submitLead(payload) {
+  if (!GOOGLE_SCRIPT_URL) return { skipped: true };
+
+  const response = await fetch(GOOGLE_SCRIPT_URL, {
+    method: "POST",
+    mode: "no-cors",
+    headers: { "Content-Type": "text/plain;charset=utf-8" },
+    body: JSON.stringify(payload),
   });
+
+  return { ok: true, response };
 }
 
-function showLeadError(input, errorId, message) {
-  statusLine.textContent = message;
-  statusLine.classList.add("error");
-  input.closest(".field").classList.add("has-error");
-  document.querySelector(`#${errorId}`).textContent = message;
-  input.focus();
+function openWhatsapp(payload) {
+  const message = [
+    "Hi, I used your sale and purchase calculator and would like to sense-check my figures.",
+    "",
+    `Name: ${payload.name}`,
+    `WhatsApp: ${payload.phone}`,
+    `Preferred contact time: ${payload.contactTime}`,
+    "",
+    "Figures keyed in:",
+    payload.inputSummary,
+    "",
+    "Calculated estimate:",
+    payload.summary,
+    "",
+    "Financial health snapshot:",
+    payload.analysisSummary,
+    "",
+    `Notes: ${payload.notes || "-"}`,
+  ].join("\n");
+
+  const phone = WHATSAPP_NUMBER.replace(/[^\d]/g, "");
+  window.open(`https://wa.me/${phone}?text=${encodeURIComponent(message)}`, "_blank", "noopener");
 }
 
-function isValidSingaporeMobile(value) {
-  const phone = String(value).replace(/[\s-]/g, "");
-  return /^(?:\+65)?[89]\d{7}$/.test(phone);
+function updateCommissionVisibility() {
+  $("sellerCommissionFields").classList.toggle("muted", !$("sellerCommissionOn").checked);
+  $("buyerCommissionFields").classList.toggle("muted", !$("buyerCommissionOn").checked);
 }
 
-async function submitLead() {
-  if (leadSubmitted) {
-    statusLine.textContent = "Your estimate has already been prepared for WhatsApp.";
-    statusLine.classList.remove("error");
+function syncApprovedLoanWithLoanType() {
+  const loanType = $("loanType").value;
+  const approvedLoanInput = $("approvedLoan");
+  const isHdbPurchase = state.mode === "hdb";
+
+  if (loanType === "No loan") {
+    approvedLoanInput.value = money.format(0);
+    approvedLoanInput.disabled = true;
     return;
   }
 
-  clearLeadErrors();
+  approvedLoanInput.disabled = false;
+  if (cleanNumber(approvedLoanInput.value) === 0) {
+    const purchasePrice = num("purchasePrice");
+    const valuation = isHdbPurchase ? num("valuation") : purchasePrice;
+    const loanValue = Math.min(purchasePrice, valuation || purchasePrice);
+    const loanRate = loanType === "HDB loan" ? HDB_LOAN_LTV : BANK_LOAN_LTV;
+    approvedLoanInput.value = money.format(loanValue * loanRate);
+  }
+}
 
-  const nameInput = document.querySelector("#leadName");
-  const phoneInput = document.querySelector("#leadPhone");
-  const leadName = nameInput.value.trim();
-  const leadPhone = phoneInput.value.trim();
+function updateBuyerModeCopy() {
+  const isHdbPurchase = state.mode === "hdb";
+  const hdbLoanOption = Array.from($("loanType").options).find((option) => option.textContent === "HDB loan");
+  const absdOptions = Array.from($("absdProfile").options);
 
-  if (!leadName) {
-    showLeadError(nameInput, "leadNameError", "You have yet to key in your name.");
+  $("buyerPanelTitle").textContent = isHdbPurchase ? "HDB buyer calculator" : "Condo buyer calculator";
+  $("buyerPanelDescription").textContent = isHdbPurchase
+    ? "Estimate cash needed after HDB or bank loan, CPF OA, grants, stamp duties, and cash-only misc/commission costs."
+    : "Estimate cash needed after bank loan, CPF OA, stamp duties, and cash-only misc/commission costs.";
+  $("purchasePriceLabel").textContent = isHdbPurchase ? "Next HDB purchase price" : "Private condo purchase price";
+  $("valuationLabel").textContent = isHdbPurchase ? "Valuation" : "Bank Valuation";
+  $("absdLabel").textContent = isHdbPurchase ? "SPR ABSD option" : "ABSD profile";
+  $("grantLabel").textContent = isHdbPurchase ? "CPF housing grants, if any" : "CPF housing grants";
+  $("valuation").closest(".field").hidden = !isHdbPurchase;
+  $("buyerGrant").closest(".field").hidden = !isHdbPurchase;
+  if (isHdbPurchase && cleanNumber($("buyerLegal").value) === 3000) {
+    $("buyerLegal").value = money.format(2500);
+  }
+  if (!isHdbPurchase && cleanNumber($("buyerLegal").value) === 2500) {
+    $("buyerLegal").value = money.format(3000);
+  }
+  $("buyerLegalGuide").textContent = isHdbPurchase ? "Usually around $1,500 to $2,500." : "Usually around $2,500 to $3,000.";
+  $("buyerMiscGuide").textContent = isHdbPurchase
+    ? "Usually around $500 to $1,500 for resale application, HDB admin, HDB search, HDB survey, HDB caveat, pro-rated town council, and property tax."
+    : "Usually between $500 to $1,000.";
+
+  if (hdbLoanOption) {
+    hdbLoanOption.hidden = !isHdbPurchase;
+    hdbLoanOption.disabled = !isHdbPurchase;
+  }
+
+  if (!isHdbPurchase && $("loanType").value === "HDB loan") {
+    $("loanType").value = "Bank loan";
+  }
+
+  absdOptions.forEach((option) => {
+    const isVisible = option.dataset.scope === (isHdbPurchase ? "hdb" : "condo");
+    option.hidden = !isVisible;
+    option.disabled = !isVisible;
+  });
+  const selectedScope = $("absdProfile").selectedOptions[0]?.dataset.scope;
+  if (selectedScope !== (isHdbPurchase ? "hdb" : "condo")) {
+    const nextOption = absdOptions.find((option) => !option.disabled);
+    if (nextOption) nextOption.selected = true;
+  }
+
+  syncApprovedLoanWithLoanType();
+}
+
+function updatePanels() {
+  updateBuyerModeCopy();
+  $("sellerPanel").classList.toggle("active", state.mode === "seller" || state.mode === "hdb" || state.mode === "condo");
+  $("buyerPanel").classList.toggle("active", state.mode === "hdb" || state.mode === "condo");
+  $("calculator").classList.toggle("combined", state.mode === "hdb" || state.mode === "condo");
+}
+
+function calculate() {
+  updateCommissionVisibility();
+  if (state.mode === "seller") renderSeller();
+  else renderBoth();
+}
+
+document.querySelectorAll(".mode-btn").forEach((button) => {
+  button.addEventListener("click", () => {
+    const previousMode = state.mode;
+    state.mode = button.dataset.mode;
+    if (state.mode === "hdb" && previousMode !== "hdb") {
+      $("loanType").value = "HDB loan";
+    }
+    document.querySelectorAll(".mode-btn").forEach((item) => item.classList.remove("active"));
+    button.classList.add("active");
+    updatePanels();
+    calculate();
+  });
+});
+
+document.querySelectorAll("input, select").forEach((input) => {
+  input.addEventListener("input", calculate);
+  input.addEventListener("change", calculate);
+});
+
+$("loanType").addEventListener("change", () => {
+  syncApprovedLoanWithLoanType();
+  calculate();
+});
+
+document.querySelectorAll(".money-input").forEach((input) => {
+  input.addEventListener("focus", () => {
+    input.value = cleanNumber(input.value) || "";
+  });
+  input.addEventListener("blur", () => {
+    formatMoneyInput(input);
+    calculate();
+  });
+  formatMoneyInput(input);
+});
+
+$("openLeadForm").addEventListener("click", () => {
+  updateLeadPreview();
+  $("leadModal").hidden = false;
+  $("leadName").focus();
+});
+
+$("closeLeadForm").addEventListener("click", () => {
+  $("leadModal").hidden = true;
+});
+
+$("leadModal").addEventListener("click", (event) => {
+  if (event.target === $("leadModal")) $("leadModal").hidden = true;
+});
+
+$("leadForm").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  if (state.leadSubmitted) return;
+
+  const name = $("leadName").value.trim();
+  const phone = $("leadPhone").value.trim();
+
+  if (!name || !phone) {
+    $("leadStatus").textContent = "Please enter your name and WhatsApp number before submitting.";
+    if (!name) $("leadName").focus();
+    else $("leadPhone").focus();
     return;
   }
 
-  if (!leadPhone) {
-    showLeadError(phoneInput, "leadPhoneError", "You have yet to key in your WhatsApp number.");
+  if (!$("dataConsent").checked) {
+    $("leadStatus").textContent = "Please acknowledge the data collection notice before submitting.";
     return;
   }
-
-  if (!isValidSingaporeMobile(leadPhone)) {
-    showLeadError(phoneInput, "leadPhoneError", "Please rekey a valid Singapore mobile number.");
-    return;
-  }
-
-  if (!document.querySelector("#leadConsent").checked) {
-    statusLine.textContent = "Please tick the consent box first.";
-    return;
-  }
-
-  leadSubmitted = true;
-  submitLeadButton.disabled = true;
-  submitLeadButton.textContent = "Opening WhatsApp...";
 
   const payload = leadPayload();
+  state.leadSubmitted = true;
+  $("leadSubmitButton").disabled = true;
+  $("leadStatus").textContent = "Preparing your estimate and opening WhatsApp...";
 
-  if (FORM_ENDPOINT) {
-    try {
-      await fetch(FORM_ENDPOINT, {
-        method: "POST",
-        mode: "no-cors",
-        headers: { "Content-Type": "text/plain;charset=utf-8" },
-        body: JSON.stringify(payload),
-      });
-    } catch (error) {
-      leadSubmitted = false;
-      submitLeadButton.disabled = false;
-      submitLeadButton.textContent = "Sense check and open Whatsapp";
-      statusLine.textContent = "Unable to record the details. Please try again.";
-      return;
-    }
-  } else {
-    localStorage.setItem("condoCalculatorLastLead", JSON.stringify(payload));
+  try {
+    const result = await submitLead(payload);
+    $("leadStatus").textContent = result.skipped
+      ? "WhatsApp is opening now. Google Sheets logging will start after the Apps Script URL is added."
+      : "Submitted. WhatsApp is opening now.";
+  } catch (error) {
+    $("leadStatus").textContent = "WhatsApp is opening now. Google Sheets logging could not be completed.";
   }
 
-  statusLine.textContent = "Opening WhatsApp with your estimate summary.";
-  statusLine.classList.remove("error");
-  window.open(`https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(whatsappMessage(payload))}`, "_blank");
-}
+  openWhatsapp(payload);
+});
 
-buttons.forEach((button) => button.addEventListener("click", () => setMode(button.dataset.mode)));
-form.addEventListener("input", render);
-document.querySelectorAll(".money-input").forEach((input) => {
-  input.addEventListener("blur", () => normaliseMoneyInput(input));
-});
-document.querySelector("#openLead").addEventListener("click", () => {
-  renderModalEstimate();
-  modal.classList.add("open");
-  modal.setAttribute("aria-hidden", "false");
-});
-document.querySelector("#closeLead").addEventListener("click", () => {
-  modal.classList.remove("open");
-  modal.setAttribute("aria-hidden", "true");
-});
-document.querySelector("#leadName").addEventListener("input", clearLeadErrors);
-document.querySelector("#leadPhone").addEventListener("input", clearLeadErrors);
-submitLeadButton.addEventListener("click", submitLead);
-
-render();
+updatePanels();
+calculate();
