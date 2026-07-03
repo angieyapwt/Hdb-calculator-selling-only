@@ -7,6 +7,8 @@ const BANK_LOAN_LTV = 0.75;
 const state = {
   mode: "seller",
   leadSubmitted: false,
+  valuationEdited: false,
+  secondHdbPaydownEdited: false,
 };
 
 const money = new Intl.NumberFormat("en-SG", {
@@ -150,6 +152,11 @@ function getBuyerData() {
   const loanRate = loanType === "HDB loan" ? HDB_LOAN_LTV : BANK_LOAN_LTV;
   const maxLoan = loanType === "No loan" ? 0 : loanValue * loanRate;
   const loan = Math.min(keyedLoan, maxLoan);
+  const secondHdbLoanPaydown =
+    isHdbPurchase && loanType === "HDB loan"
+      ? Math.min(num("secondHdbPaydown"), loan)
+      : 0;
+  const loanUsed = Math.max(loan - secondHdbLoanPaydown, 0);
   const loanShortfall = loanType === "No loan" ? 0 : Math.max(maxLoan - loan, 0);
   const cpf = num("cpfAvailable");
   const grant = isHdbPurchase ? num("buyerGrant") : 0;
@@ -164,10 +171,10 @@ function getBuyerData() {
     loanType === "No loan"
       ? [{ label: "No loan purchase amount", value: purchasePrice, className: "warning" }]
       : loanType === "HDB loan"
-        ? [{ label: "25% CPF and/or cash downpayment guide", value: loanValue * 0.25, className: "warning" }]
+        ? [{ label: "25% downpayment by Cash/CPF", value: loanValue * 0.25, className: "warning" }]
         : [
-            { label: "5% cash downpayment guide", value: loanValue * 0.05, className: "warning" },
-            { label: "20% CPF and/or cash downpayment guide", value: loanValue * 0.2, className: "warning" },
+            { label: "20% downpayment by Cash/CPF", value: loanValue * 0.2, className: "warning" },
+            { label: "5% downpayment cash", value: loanValue * 0.05, className: "warning" },
           ];
   const commission = commissionWithGst(
     purchasePrice,
@@ -182,7 +189,7 @@ function getBuyerData() {
     legal +
     misc +
     commission -
-    loan -
+    loanUsed -
     grant;
   const cashOnlyCosts = misc + commission;
   const cpfEligibleNeeded = Math.max(totalCashAndCpfNeeded - cashOnlyCosts, 0);
@@ -194,22 +201,29 @@ function getBuyerData() {
   const ltvLabel = loanType === "HDB loan" ? "Max HDB loan at 75% LTV" : "Max bank loan at 75% LTV";
   const buyerRows = [
     { label: purchaseLabel, value: purchasePrice, className: "highlight" },
+    ...downpaymentRows,
+    { label: ltvLabel, value: maxLoan },
+    { label: "Approved loan", value: -loan },
+    ...(secondHdbLoanPaydown > 0
+      ? [
+          { label: "Second HDB loan cash proceeds paydown", value: secondHdbLoanPaydown, className: "warning" },
+          { label: "Net loan after paydown", value: -loanUsed },
+        ]
+      : []),
     ...(isHdbPurchase ? [{ label: valuationLabel, value: valuation }] : []),
     { label: "Stamp duty basis", value: stampDutyBase },
     { label: "Buyer Stamp Duty", value: bsd },
     { label: `ABSD at ${absdRate}%`, value: absd, className: absd > 0 ? "warning" : "" },
+    ...(absd > 0 ? [{ label: "Total stamp duty amount", value: bsd + absd, className: "highlight" }] : []),
     { label: "Legal fee", value: legal },
     { label: "Miscellaneous fee (cash only)", value: misc },
     { label: "Agent commission + GST (cash only)", value: commission },
-    { label: ltvLabel, value: maxLoan },
-    { label: "Approved loan", value: -loan },
     ...(loanShortfall > 0
       ? [{ label: "Loan shortfall to be funded", value: loanShortfall, className: "warning" }]
       : []),
-    ...(grant > 0 ? [{ label: "CPF housing grants", value: -grant }] : []),
     ...(isHdbPurchase ? [{ label: "Cash Over Valuation (COV)", value: valuationGap, className: valuationGap > 0 ? "warning" : "" }] : []),
-    ...downpaymentRows,
     { label: "CPF OA used", value: -cpfUsed },
+    { label: "Grant amount", value: -grant },
     { label: "Cash needed before estimated HDB sale proceeds", value: cashNeededBeforeSale, className: "highlight" },
   ];
 
@@ -219,6 +233,7 @@ function getBuyerData() {
     cpfUsed,
     cashOnlyCosts,
     cashNeededBeforeSale,
+    secondHdbLoanPaydown,
     cov: isHdbPurchase ? valuationGap : 0,
     rows: buyerRows,
   };
@@ -235,7 +250,7 @@ function combinedBuyingRows(seller, buyer) {
     ...buyer.rows,
     { label: "Estimated HDB sale proceeds", value: saleProceedsOffset, className: seller.proceeds < 0 ? "warning" : "highlight" },
     {
-      label: "Estimated cash top-up needed after CPF OA and estimated HDB sale proceeds",
+      label: "Estimated cash top-up needed after CPF OA, grant and estimated HDB sale proceeds",
       value: topUp,
       className: "highlight",
     },
@@ -276,7 +291,7 @@ function getHealthSnapshot() {
   const tone = status === "Healthy" ? "healthy" : status === "Worth Planning" ? "planning" : "review";
   const modeText = state.mode === "hdb" ? "next HDB purchase" : "condo upgrade";
   const reasonText = saleShortfall > 0
-    ? `Due to the negative sale proceeds, this ${modeText} may require an estimated cash top-up of ${money.format(topUp)} after CPF OA, sale shortfall, and purchase costs are considered.`
+    ? `Due to the negative sale proceeds, this ${modeText} may require an estimated cash top-up of ${money.format(topUp)} after CPF OA, grant, sale shortfall, and purchase costs are considered.`
     : reasons.length
       ? `This ${modeText} may need closer planning because the ${reasons.join(", and ")}.`
       : `Based on the keyed-in figures, this ${modeText} appears to have a good starting position.`;
@@ -356,7 +371,7 @@ function renderBoth() {
   $("resultKicker").textContent = "Estimated cash top-up needed";
   $("resultTotal").textContent = money.format(topUp);
   $("quickTotal").textContent = money.format(topUp);
-  $("quickLabel").textContent = `After CPF OA and estimated HDB sale proceeds for ${target}`;
+  $("quickLabel").textContent = `After CPF OA, grant and estimated HDB sale proceeds for ${target}`;
   renderHealthSnapshot();
 
   setGroupedBreakdown([
@@ -396,7 +411,7 @@ function getCurrentEstimate() {
   const topUp = cashTopUpAfterCpfAndSale(seller, buyer);
   return {
     mode: getModeLabel(),
-    resultLabel: "Estimated cash top-up needed after CPF OA and estimated HDB sale proceeds",
+    resultLabel: "Estimated cash top-up needed after CPF OA, grant and estimated HDB sale proceeds",
     resultTotal: money.format(topUp),
     rows: [
       ...seller.rows,
@@ -461,6 +476,9 @@ function fullInputDetails() {
     inputValue(state.mode === "hdb" ? "Next HDB purchase price" : "Private condo purchase price", "purchasePrice"),
     ...(state.mode === "hdb" ? [inputValue("Valuation", "valuation")] : []),
     { label: "Loan type", value: $("loanType").value },
+    ...(state.mode === "hdb" && $("loanType").value === "HDB loan"
+      ? [inputValue("Second HDB loan cash proceeds paydown", "secondHdbPaydown")]
+      : []),
     inputValue("Approved loan amount", "approvedLoan"),
     inputValue("Total OA available", "cpfAvailable"),
     ...(state.mode === "hdb" ? [inputValue("CPF housing grants, if any", "buyerGrant")] : []),
@@ -566,6 +584,27 @@ function syncApprovedLoanWithLoanType() {
   }
 }
 
+function syncValuationWithPurchasePrice() {
+  if (state.mode !== "hdb" || state.valuationEdited) return;
+  $("valuation").value = money.format(num("purchasePrice"));
+}
+
+function updateSecondHdbPaydownAutoValue() {
+  const field = $("secondHdbPaydown");
+  if (!field || state.secondHdbPaydownEdited) return;
+
+  if (state.mode !== "hdb" || $("loanType").value !== "HDB loan") {
+    field.value = money.format(0);
+    return;
+  }
+
+  const seller = getSellerData();
+  const keyedLoan = num("approvedLoan");
+  const loanValue = Math.min(num("purchasePrice"), num("valuation") || num("purchasePrice"));
+  const loan = Math.min(keyedLoan, loanValue * HDB_LOAN_LTV);
+  field.value = money.format(Math.min(Math.max(seller.proceeds, 0) * 0.5, loan));
+}
+
 function updateBuyerModeCopy() {
   const isHdbPurchase = state.mode === "hdb";
   const hdbLoanOption = Array.from($("loanType").options).find((option) => option.textContent === "HDB loan");
@@ -581,6 +620,8 @@ function updateBuyerModeCopy() {
   $("grantLabel").textContent = isHdbPurchase ? "CPF housing grants, if any" : "CPF housing grants";
   $("valuation").closest(".field").hidden = !isHdbPurchase;
   $("buyerGrant").closest(".field").hidden = !isHdbPurchase;
+  $("loanTypeGuide").hidden = !(isHdbPurchase && $("loanType").value === "HDB loan");
+  $("secondHdbPaydownField").hidden = !(isHdbPurchase && $("loanType").value === "HDB loan");
   if (isHdbPurchase && cleanNumber($("buyerLegal").value) === 3000) {
     $("buyerLegal").value = money.format(2500);
   }
@@ -613,6 +654,8 @@ function updateBuyerModeCopy() {
   }
 
   syncApprovedLoanWithLoanType();
+  syncValuationWithPurchasePrice();
+  updateSecondHdbPaydownAutoValue();
 }
 
 function updatePanels() {
@@ -634,6 +677,8 @@ document.querySelectorAll(".mode-btn").forEach((button) => {
     state.mode = button.dataset.mode;
     if (state.mode === "hdb" && previousMode !== "hdb") {
       $("loanType").value = "HDB loan";
+      state.valuationEdited = false;
+      state.secondHdbPaydownEdited = false;
     }
     document.querySelectorAll(".mode-btn").forEach((item) => item.classList.remove("active"));
     button.classList.add("active");
@@ -643,12 +688,27 @@ document.querySelectorAll(".mode-btn").forEach((button) => {
 });
 
 document.querySelectorAll("input, select").forEach((input) => {
-  input.addEventListener("input", calculate);
-  input.addEventListener("change", calculate);
+  input.addEventListener("input", () => {
+    if (input.id === "valuation") state.valuationEdited = true;
+    if (input.id === "secondHdbPaydown") state.secondHdbPaydownEdited = true;
+    if (input.id === "purchasePrice") syncValuationWithPurchasePrice();
+    if (["purchasePrice", "sellingPrice", "sellerLoan", "cpfRefund", "approvedLoan"].includes(input.id)) {
+      updateSecondHdbPaydownAutoValue();
+    }
+    calculate();
+  });
+  input.addEventListener("change", () => {
+    if (input.id === "loanType") {
+      state.secondHdbPaydownEdited = false;
+      updateBuyerModeCopy();
+    }
+    calculate();
+  });
 });
 
 $("loanType").addEventListener("change", () => {
-  syncApprovedLoanWithLoanType();
+  state.secondHdbPaydownEdited = false;
+  updateBuyerModeCopy();
   calculate();
 });
 
@@ -658,6 +718,10 @@ document.querySelectorAll(".money-input").forEach((input) => {
   });
   input.addEventListener("blur", () => {
     formatMoneyInput(input);
+    if (input.id === "purchasePrice") syncValuationWithPurchasePrice();
+    if (["purchasePrice", "valuation", "sellingPrice", "sellerLoan", "cpfRefund", "approvedLoan"].includes(input.id)) {
+      updateSecondHdbPaydownAutoValue();
+    }
     calculate();
   });
   formatMoneyInput(input);

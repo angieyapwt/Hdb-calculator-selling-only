@@ -112,6 +112,12 @@
                   <option>Bank loan</option>
                   <option>No loan</option>
                 </select>
+                <small id="loanTypeGuide">When taking a second housing loan from HDB, 50% of cash proceeds needs to pay down the loan amount.</small>
+              </label>
+              <label class="field" id="secondHdbPaydownField">
+                <span>Second HDB loan cash proceeds paydown</span>
+                <input class="money-input" type="text" inputmode="decimal" id="secondHdbPaydown" value="$0">
+                <small>Auto-estimates 50% of positive HDB sale proceeds, capped at the approved loan. You may edit this if needed.</small>
               </label>
               <label class="field">
                 <span>Approved loan amount</span>
@@ -121,6 +127,7 @@
               <label class="field">
                 <span>Total OA available</span>
                 <input class="money-input" type="text" inputmode="decimal" id="cpfAvailable" value="$200,000">
+                <small>Can leave up to $20k for HDB loan. The rest must clear.</small>
               </label>
               <label class="field">
                 <span id="grantLabel">CPF housing grants, if any</span>
@@ -253,6 +260,6 @@
       </div>
     </main>
 
-    <script src="script.js?v=20260703-1"></script>
+    <script src="script.js?v=20260703-3"></script>
   </body>
 </html>
