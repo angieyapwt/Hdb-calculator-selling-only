@@ -29,6 +29,10 @@ function num(id) {
 }
 
 function formatMoneyInput(input) {
+  if (!String(input.value || "").match(/\d/)) {
+    input.value = "";
+    return;
+  }
   input.value = money.format(Math.max(cleanNumber(input.value), 0));
 }
 
@@ -62,8 +66,14 @@ function buyerStampDuty(amount) {
   return Math.floor(Math.max(duty, amount > 0 ? 1 : 0));
 }
 
-function commissionWithGst(base, rate, enabled) {
+function hasKeyedAmount(id) {
+  const input = $(id);
+  return Boolean(input && String(input.value || "").match(/\d/));
+}
+
+function commissionWithGst(base, rate, enabled, overrideId) {
   if (!enabled) return 0;
+  if (overrideId && hasKeyedAmount(overrideId)) return num(overrideId);
   const commission = base * (rate / 100);
   return commission + commission * GST_RATE;
 }
@@ -112,7 +122,8 @@ function getSellerData() {
   const commission = commissionWithGst(
     sellingPrice,
     num("sellerCommissionRate"),
-    $("sellerCommissionOn").checked
+    $("sellerCommissionOn").checked,
+    "sellerCommissionOverride"
   );
 
   const proceeds =
@@ -179,7 +190,8 @@ function getBuyerData() {
   const commission = commissionWithGst(
     purchasePrice,
     num("buyerCommissionRate"),
-    $("buyerCommissionOn").checked
+    $("buyerCommissionOn").checked,
+    "buyerCommissionOverride"
   );
 
   const totalCashAndCpfNeeded =
@@ -470,6 +482,7 @@ function fullInputDetails() {
     inputValue("Seller legal fee", "sellerLegal"),
     inputValue("Seller miscellaneous fee (cash only)", "sellerMisc"),
     { label: "Seller agent commission + GST (cash only)", value: $("sellerCommissionOn").checked ? `${$("sellerCommissionRate").value}%` : "Not included" },
+    { label: "Seller edited commission amount + GST, if any", value: $("sellerCommissionOverride").value || "Not edited" },
   ];
 
   const buyerInputs = [
@@ -486,6 +499,7 @@ function fullInputDetails() {
     inputValue("Buyer legal fee", "buyerLegal"),
     inputValue("Buyer miscellaneous fee (cash only)", "buyerMisc"),
     { label: "Buyer agent commission + GST (cash only)", value: $("buyerCommissionOn").checked ? `${$("buyerCommissionRate").value}%` : "Not included" },
+    { label: "Buyer edited commission amount + GST, if any", value: $("buyerCommissionOverride").value || "Not edited" },
   ];
 
   if (state.mode === "seller") return sellerInputs;
@@ -579,6 +593,10 @@ function syncApprovedLoanWithLoanType() {
     const purchasePrice = num("purchasePrice");
     const valuation = isHdbPurchase ? num("valuation") : purchasePrice;
     const loanValue = Math.min(purchasePrice, valuation || purchasePrice);
+    if (loanValue <= 0) {
+      approvedLoanInput.value = "";
+      return;
+    }
     const loanRate = loanType === "HDB loan" ? HDB_LOAN_LTV : BANK_LOAN_LTV;
     approvedLoanInput.value = money.format(loanValue * loanRate);
   }
@@ -586,7 +604,8 @@ function syncApprovedLoanWithLoanType() {
 
 function syncValuationWithPurchasePrice() {
   if (state.mode !== "hdb" || state.valuationEdited) return;
-  $("valuation").value = money.format(num("purchasePrice"));
+  const purchasePrice = num("purchasePrice");
+  $("valuation").value = purchasePrice > 0 ? money.format(purchasePrice) : "";
 }
 
 function updateSecondHdbPaydownAutoValue() {
@@ -689,10 +708,11 @@ document.querySelectorAll(".mode-btn").forEach((button) => {
 
 document.querySelectorAll("input, select").forEach((input) => {
   input.addEventListener("input", () => {
+    if (input.classList.contains("money-input")) formatMoneyInput(input);
     if (input.id === "valuation") state.valuationEdited = true;
     if (input.id === "secondHdbPaydown") state.secondHdbPaydownEdited = true;
     if (input.id === "purchasePrice") syncValuationWithPurchasePrice();
-    if (["purchasePrice", "sellingPrice", "sellerLoan", "cpfRefund", "approvedLoan"].includes(input.id)) {
+    if (["purchasePrice", "sellingPrice", "sellerLoan", "cpfRefund", "approvedLoan", "sellerCommissionOverride", "buyerCommissionOverride"].includes(input.id)) {
       updateSecondHdbPaydownAutoValue();
     }
     calculate();
@@ -713,13 +733,10 @@ $("loanType").addEventListener("change", () => {
 });
 
 document.querySelectorAll(".money-input").forEach((input) => {
-  input.addEventListener("focus", () => {
-    input.value = cleanNumber(input.value) || "";
-  });
   input.addEventListener("blur", () => {
     formatMoneyInput(input);
     if (input.id === "purchasePrice") syncValuationWithPurchasePrice();
-    if (["purchasePrice", "valuation", "sellingPrice", "sellerLoan", "cpfRefund", "approvedLoan"].includes(input.id)) {
+    if (["purchasePrice", "valuation", "sellingPrice", "sellerLoan", "cpfRefund", "approvedLoan", "sellerCommissionOverride", "buyerCommissionOverride"].includes(input.id)) {
       updateSecondHdbPaydownAutoValue();
     }
     calculate();

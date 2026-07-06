@@ -39,15 +39,15 @@
             <div class="grid">
               <label class="field">
                 <span>Selling price</span>
-                <input class="money-input" type="text" inputmode="decimal" id="sellingPrice" value="$650,000">
+                <input class="money-input" type="text" inputmode="decimal" id="sellingPrice" value="">
               </label>
               <label class="field">
                 <span>Outstanding loan</span>
-                <input class="money-input" type="text" inputmode="decimal" id="sellerLoan" value="$220,000">
+                <input class="money-input" type="text" inputmode="decimal" id="sellerLoan" value="">
               </label>
               <label class="field">
                 <span>CPF refund with accrued interest</span>
-                <input class="money-input" type="text" inputmode="decimal" id="cpfRefund" value="$180,000">
+                <input class="money-input" type="text" inputmode="decimal" id="cpfRefund" value="">
               </label>
               <label class="field">
                 <span>Outstanding HIP, if any</span>
@@ -85,6 +85,11 @@
                   <input type="number" min="0" step="0.1" inputmode="decimal" id="sellerCommissionRate" value="2">
                   <small>% of selling price, with 9% GST added. This is treated as cash only.</small>
                 </label>
+                <label class="field compact">
+                  <span>Commission amount + GST, if edited</span>
+                  <input class="money-input" type="text" inputmode="decimal" id="sellerCommissionOverride" value="">
+                  <small>Leave blank to calculate using the commission rate.</small>
+                </label>
               </div>
             </div>
           </section>
@@ -98,11 +103,11 @@
             <div class="grid">
               <label class="field">
                 <span id="purchasePriceLabel">Next home purchase price</span>
-                <input class="money-input" type="text" inputmode="decimal" id="purchasePrice" value="$1,500,000">
+                <input class="money-input" type="text" inputmode="decimal" id="purchasePrice" value="">
               </label>
               <label class="field">
                 <span id="valuationLabel">Valuation</span>
-                <input class="money-input" type="text" inputmode="decimal" id="valuation" value="$1,500,000">
+                <input class="money-input" type="text" inputmode="decimal" id="valuation" value="">
                 <small>Loan cap is based on the lower of purchase price and valuation.</small>
               </label>
               <label class="field">
@@ -121,12 +126,12 @@
               </label>
               <label class="field">
                 <span>Approved loan amount</span>
-                <input class="money-input" type="text" inputmode="decimal" id="approvedLoan" value="$1,125,000">
+                <input class="money-input" type="text" inputmode="decimal" id="approvedLoan" value="">
                 <small id="loanGuide">Calculator will cap this at 75% loan-to-value.</small>
               </label>
               <label class="field">
                 <span>Total OA available</span>
-                <input class="money-input" type="text" inputmode="decimal" id="cpfAvailable" value="$200,000">
+                <input class="money-input" type="text" inputmode="decimal" id="cpfAvailable" value="">
                 <small>Can leave up to $20k for HDB loan. The rest must clear.</small>
               </label>
               <label class="field">
@@ -166,6 +171,11 @@
                   <span>Commission rate</span>
                   <input type="number" min="0" step="0.1" inputmode="decimal" id="buyerCommissionRate" value="1">
                   <small>% of purchase price, with 9% GST added. This is treated as cash only.</small>
+                </label>
+                <label class="field compact">
+                  <span>Commission amount + GST, if edited</span>
+                  <input class="money-input" type="text" inputmode="decimal" id="buyerCommissionOverride" value="">
+                  <small>Leave blank to calculate using the commission rate.</small>
                 </label>
               </div>
             </div>
@@ -260,6 +270,6 @@
       </div>
     </main>
 
-    <script src="script.js?v=20260703-3"></script>
+    <script src="script.js?v=20260706-1"></script>
   </body>
 </html>
