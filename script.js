@@ -538,14 +538,33 @@ function updateLeadPreview() {
 async function submitLead(payload) {
   if (!GOOGLE_SCRIPT_URL) return { skipped: true };
 
-  const response = await fetch(GOOGLE_SCRIPT_URL, {
-    method: "POST",
-    mode: "no-cors",
-    headers: { "Content-Type": "text/plain;charset=utf-8" },
-    body: JSON.stringify(payload),
-  });
+  const iframeName = `leadSubmitFrame_${Date.now()}`;
+  const iframe = document.createElement("iframe");
+  iframe.name = iframeName;
+  iframe.hidden = true;
+  document.body.appendChild(iframe);
 
-  return { ok: true, response };
+  const form = document.createElement("form");
+  form.method = "POST";
+  form.action = GOOGLE_SCRIPT_URL;
+  form.target = iframeName;
+  form.hidden = true;
+
+  const payloadInput = document.createElement("input");
+  payloadInput.type = "hidden";
+  payloadInput.name = "payload";
+  payloadInput.value = JSON.stringify(payload);
+  form.appendChild(payloadInput);
+
+  document.body.appendChild(form);
+  form.submit();
+
+  window.setTimeout(() => {
+    form.remove();
+    iframe.remove();
+  }, 15000);
+
+  return { ok: true };
 }
 
 function openWhatsapp(payload) {
