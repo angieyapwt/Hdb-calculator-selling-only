@@ -156,8 +156,8 @@ function getSellerData() {
 function getBuyerData() {
   const isHdbPurchase = state.mode === "hdb";
   const purchasePrice = num("purchasePrice");
-  const valuation = isHdbPurchase ? num("valuation") : purchasePrice;
-  const loanValue = Math.min(purchasePrice, valuation || purchasePrice);
+  const valuation = isHdbPurchase && hasKeyedAmount("valuation") ? num("valuation") : purchasePrice;
+  const loanValue = Math.min(purchasePrice, valuation);
   const loanType = $("loanType").value;
   const keyedLoan = loanType === "No loan" ? 0 : num("approvedLoan");
   const loanRate = loanType === "HDB loan" ? HDB_LOAN_LTV : BANK_LOAN_LTV;
@@ -201,12 +201,13 @@ function getBuyerData() {
     legal +
     misc +
     commission -
-    loanUsed -
-    grant;
-  const cashOnlyCosts = misc + commission;
+    loanUsed;
+  const cashOnlyCosts = misc + commission + (isHdbPurchase ? valuationGap : 0) +
+    (loanType === "Bank loan" ? loanValue * 0.05 : 0);
   const cpfEligibleNeeded = Math.max(totalCashAndCpfNeeded - cashOnlyCosts, 0);
-  const cpfUsed = Math.min(cpf, cpfEligibleNeeded);
-  const cashNeededBeforeSale = cashOnlyCosts + Math.max(cpfEligibleNeeded - cpf, 0);
+  const grantUsed = Math.min(grant, cpfEligibleNeeded);
+  const cpfUsed = Math.min(cpf, Math.max(cpfEligibleNeeded - grantUsed, 0));
+  const cashNeededBeforeSale = cashOnlyCosts + Math.max(cpfEligibleNeeded - grantUsed - cpfUsed, 0);
 
   const purchaseLabel = isHdbPurchase ? "Next HDB purchase price" : "Private condo purchase price";
   const valuationLabel = isHdbPurchase ? "Valuation" : "Bank Valuation";
@@ -233,14 +234,14 @@ function getBuyerData() {
     ...(loanShortfall > 0
       ? [{ label: "Loan shortfall to be funded", value: loanShortfall, className: "warning" }]
       : []),
-    ...(isHdbPurchase ? [{ label: "Cash Over Valuation (COV)", value: valuationGap, className: valuationGap > 0 ? "warning" : "" }] : []),
+    ...(isHdbPurchase ? [{ label: "Cash Over Valuation (COV, cash only)", value: valuationGap, className: valuationGap > 0 ? "warning" : "" }] : []),
     { label: "CPF OA used", value: -cpfUsed },
-    { label: "Grant amount", value: -grant },
+    { label: "Grant used", value: -grantUsed },
     { label: "Cash needed before estimated HDB sale proceeds", value: cashNeededBeforeSale, className: "highlight" },
   ];
 
   return {
-    required: totalCashAndCpfNeeded,
+    required: totalCashAndCpfNeeded - grantUsed,
     cpf,
     cpfUsed,
     cashOnlyCosts,
@@ -610,8 +611,8 @@ function syncApprovedLoanWithLoanType() {
   approvedLoanInput.disabled = false;
   if (cleanNumber(approvedLoanInput.value) === 0) {
     const purchasePrice = num("purchasePrice");
-    const valuation = isHdbPurchase ? num("valuation") : purchasePrice;
-    const loanValue = Math.min(purchasePrice, valuation || purchasePrice);
+    const valuation = isHdbPurchase && hasKeyedAmount("valuation") ? num("valuation") : purchasePrice;
+    const loanValue = Math.min(purchasePrice, valuation);
     if (loanValue <= 0) {
       approvedLoanInput.value = "";
       return;
@@ -638,7 +639,7 @@ function updateSecondHdbPaydownAutoValue() {
 
   const seller = getSellerData();
   const keyedLoan = num("approvedLoan");
-  const loanValue = Math.min(num("purchasePrice"), num("valuation") || num("purchasePrice"));
+  const loanValue = Math.min(num("purchasePrice"), hasKeyedAmount("valuation") ? num("valuation") : num("purchasePrice"));
   const loan = Math.min(keyedLoan, loanValue * HDB_LOAN_LTV);
   field.value = money.format(Math.min(Math.max(seller.proceeds, 0) * 0.5, loan));
 }
@@ -815,3 +816,4 @@ $("leadForm").addEventListener("submit", async (event) => {
 
 updatePanels();
 calculate();
+
