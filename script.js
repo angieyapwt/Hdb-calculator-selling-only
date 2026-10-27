@@ -215,6 +215,7 @@ function getBuyerData() {
   const buyerRows = [
     { label: purchaseLabel, value: purchasePrice, className: "highlight" },
     ...downpaymentRows,
+    ...(isHdbPurchase ? [{ label: "Cash-over-valuation (cash only)", value: valuationGap, className: valuationGap > 0 ? "warning" : "" }] : []),
     { label: ltvLabel, value: maxLoan },
     { label: "Approved loan", value: -loan },
     ...(secondHdbLoanPaydown > 0
@@ -234,7 +235,7 @@ function getBuyerData() {
     ...(loanShortfall > 0
       ? [{ label: "Loan shortfall to be funded", value: loanShortfall, className: "warning" }]
       : []),
-    ...(isHdbPurchase ? [{ label: "Cash Over Valuation (COV, cash only)", value: valuationGap, className: valuationGap > 0 ? "warning" : "" }] : []),
+    ...(isHdbPurchase ? [{ label: "Cash top up for Loan", value: loanType === "No loan" ? 0 : Math.max(purchasePrice * 0.75 - valuation * 0.75, 0), className: valuationGap > 0 ? "warning" : "" }] : []),
     { label: "CPF OA used", value: -cpfUsed },
     { label: "Grant used", value: -grantUsed },
     { label: "Cash needed before estimated HDB sale proceeds", value: cashNeededBeforeSale, className: "highlight" },
